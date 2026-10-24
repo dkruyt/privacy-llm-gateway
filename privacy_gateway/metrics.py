@@ -190,16 +190,60 @@ def set_up(dependency: str, up: bool) -> None:
     UP.labels(dependency=_check(dependency, DEPENDENCIES)).set(1 if up else 0)
 
 
-def init_label_sets() -> None:
-    """Pre-create zero series so alerts and ratios work from the first scrape."""
+FIXED_REASONS = (
+    "unsupported:media:image", "unsupported:media:audio", "unsupported:media:file", "unsupported:data_url",
+    "unsupported:unknown_part_type", "unsupported:token_ids", "too_large_for_classifier", "clef_low_public_prob",
+    "clef_low_confidence", "clef_manipulation", "session_sticky", "session_store_unavailable",
+    "classifier_internal_error", "document_attached:pdf", "document_attached:text",
+)
+CLIENT_ERROR_CODES = (
+    "invalid_api_key", "invalid_json", "invalid_request", "routing_field_not_allowed", "endpoint_requires_local",
+    "not_found", "method_not_allowed", "request_too_large", "document_too_large", "document_invalid_base64",
+    "pdf_encrypted", "pdf_unreadable", "pdf_no_text_layer", "text_not_utf8", "unsupported_document_type",
+)
+
+
+def init_label_sets(key_ids: Iterable[str] = (), known_reasons: Iterable[str] = ()) -> None:
+    """Pre-create every known series at 0.
+
+    Prometheus' increase()/rate() cannot see the first increment of a series that
+    appears with value 1, so on a quiet gateway first occurrences would be lost.
+    All label values come from config and the fixed code sets (bounded).
+    """
     for route in ROUTES:
         EGRESS.labels(route=route, result="allowed")
         EGRESS.labels(route=route, result="blocked")
         INFLIGHT.labels(route=route)
+        for kind in UPSTREAM_KINDS:
+            UPSTREAM_ERRORS.labels(route=route, kind=kind)
+        for stream in ("true", "false"):
+            REQUEST_SECONDS.labels(route=route, stream=stream)
+        UPSTREAM_TTFB.labels(route=route)
     for r in CLEF_RESULTS:
         CLEF_CALLS.labels(result=r)
     for res in ("ok", "failed"):
         CONFIG_RELOADS.labels(result=res)
+    for why in SKIP_WHY:
+        CLEF_SKIPPED.labels(why=why)
+    for ev in SESSION_EVENTS:
+        SESSION_EVENTS_TOTAL.labels(event=ev)
+    for t in DOC_TYPES:
+        for res in DOC_RESULTS:
+            DOCUMENTS.labels(type=t, result=res)
+    for code in CLIENT_ERROR_CODES:
+        CLIENT_ERRORS.labels(code=code)
+    for reason in (*FIXED_REASONS, *known_reasons):
+        ROUTE_REASONS.labels(reason=safe_reason(reason))
+    for key_id in key_ids:
+        for endpoint in ("chat_completions", "completions"):
+            for stream in ("true", "false"):
+                for route, verdict in (("public", "public"), ("local", "sensitive"), ("local", "uncertain")):
+                    REQUESTS.labels(key_id=key_id, endpoint=endpoint, requested="auto", route=route,
+                                    verdict=verdict, stream=stream)
+                REQUESTS.labels(key_id=key_id, endpoint=endpoint, requested="local", route="local",
+                                verdict="uncertain", stream=stream)
+        REQUESTS.labels(key_id=key_id, endpoint="passthrough", requested="local", route="local",
+                        verdict="uncertain", stream="false")
 
 
 # --------------------------------------------------------------------------- exposition

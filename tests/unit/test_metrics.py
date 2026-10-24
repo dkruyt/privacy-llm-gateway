@@ -178,3 +178,14 @@ async def test_reload_metric_and_config_info(gw, cfg_dict, write_cfg):
     write_cfg(cfg_dict)
     assert holder.reload() is True
     assert metrics.REGISTRY.get_sample_value("privacy_config_info", {"config_sha256": holder.loaded.sha256}) == 1
+
+
+def test_known_series_precreated_at_zero():
+    """increase() cannot see the first increment of a new series; known series must start at 0."""
+    metrics.init_label_sets(["svc"], ["detector:iban", "clef_choice:personal_data"])
+    get = metrics.REGISTRY.get_sample_value
+    assert get("privacy_route_reasons_total", {"reason": "detector:iban"}) is not None
+    assert get("privacy_route_reasons_total", {"reason": "session_sticky"}) is not None
+    assert get("privacy_requests_total", {"key_id": "svc", "endpoint": "chat_completions", "requested": "auto",
+                                          "route": "local", "verdict": "sensitive", "stream": "false"}) == 0
+    assert get("privacy_client_errors_total", {"code": "invalid_api_key"}) is not None

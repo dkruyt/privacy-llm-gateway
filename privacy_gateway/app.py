@@ -191,7 +191,8 @@ def create_app(holder: ConfigHolder, *, start_background: bool = True, install_s
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        metrics.init_label_sets()
+        rt0: Runtime = holder.current
+        metrics.init_label_sets(rt0.keys.ids, rt0.known_reasons)
         metrics.set_config_info(holder.loaded.sha256)
         task = asyncio.create_task(probe_loop()) if start_background else None
         loop = asyncio.get_running_loop()
@@ -470,6 +471,12 @@ def make_holder(loaded: LoadedConfig, **build_kw) -> ConfigHolder:
         metrics.config_reload(ok)
         if ok and new is not None:
             metrics.set_config_info(new.sha256)
+            with contextlib.suppress(Exception):
+                rt = holder_ref[0].current
+                metrics.init_label_sets(rt.keys.ids, rt.known_reasons)
             logs.set_level(new.config.logging.level)
 
-    return ConfigHolder(loaded, build=lambda lc: build_runtime(lc, **build_kw), on_reload=on_reload, logger=log)
+    holder_ref: list[ConfigHolder] = []
+    holder = ConfigHolder(loaded, build=lambda lc: build_runtime(lc, **build_kw), on_reload=on_reload, logger=log)
+    holder_ref.append(holder)
+    return holder

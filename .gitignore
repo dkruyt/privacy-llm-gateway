@@ -9,3 +9,4 @@ htmlcov/
 !.env.example
 secrets/
 /config.yaml
+*.bak

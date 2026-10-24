@@ -316,6 +316,24 @@ which would print skipped secret values, is silenced.
     - It prints *leaked* (sensitive → public) and *released* (public → public) for the current config and a sweep of each threshold, for Clef alone and for the full pipeline.
     - It exits 1 if the current config leaks. `--output` writes scores only, never text.
 
+### Monitoring stack (Prometheus + Grafana)
+
+`docker compose up -d` also starts Prometheus and Grafana, both bound to localhost:
+
+| Service | URL | Notes |
+|---|---|---|
+| Grafana | http://localhost:3001 (`GRAFANA_PORT`) | user `admin`, password `GRAFANA_ADMIN_PASSWORD` from `.env`; the **Privacy Gateway** dashboard is the home dashboard |
+| Prometheus | http://localhost:9091 (`PROMETHEUS_PORT`) | scrapes `gateway:9090` every 15 s, 30 days retention, loads `prometheus/alerts.yml` (see *Alerts*) |
+
+Everything is provisioned from files: the datasource from `grafana/provisioning/datasources/`, and the dashboard
+from `grafana/dashboards/privacy-gateway.json`, which `python3 grafana/build_dashboard.py` regenerates.
+The dashboard is read-only in the UI; change the generator instead. Grafana telemetry, update checks,
+the news feed and plugin pre-installs are off. There is no Alertmanager: alerts are visible in the
+Prometheus UI under *Alerts*.
+
+The gateway pre-creates every known metric series at 0 (configured keys, reason codes, error codes).
+Otherwise Prometheus' `increase()` would miss the first occurrence of each label value on a quiet gateway.
+
 ## Testing
 
 Unit tests (no network) cover:
