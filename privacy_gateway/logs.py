@@ -76,6 +76,10 @@ def setup(level: str = "INFO") -> None:
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
+def set_level(level: str) -> None:
+    logging.getLogger().setLevel(level)
+
+
 def decision_log(
     *,
     key_id: str,

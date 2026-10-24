@@ -61,7 +61,7 @@ class UpstreamResponse:
     status: int
     content_type: str
     content: bytes | None = None  # non-streaming
-    stream: AsyncIterator[bytes] | None = None  # streaming (raw bytes, passed through unchanged)
+    stream: AsyncIterator[bytes] | None = None  # streaming (decoded SSE bytes, passed through unchanged)
     close: Any = None  # async callable closing the upstream response
 
 
@@ -189,7 +189,7 @@ class Upstreams:
 
         async def body_iter() -> AsyncIterator[bytes]:
             try:
-                async for chunk in resp.aiter_raw():
+                async for chunk in resp.aiter_bytes():  # decoded: content-encoding is not forwarded
                     yield chunk
             except httpx.TimeoutException:
                 metrics.upstream_error(route, "timeout")

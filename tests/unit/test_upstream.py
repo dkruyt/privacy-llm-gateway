@@ -143,28 +143,34 @@ def test_clients_ignore_environment(ups, monkeypatch):
         assert c._trust_env is False and c.follow_redirects is False
 
 
+HTTP_CLIENT_MODULES = {"httpx", "httpcore", "requests", "urllib3", "aiohttp", "http.client", "urllib.request", "socket"}
+
+
+def _imported_modules(tree: ast.AST) -> set[str]:
+    mods = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            mods |= {a.name for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            mods.add(node.module)
+            mods |= {f"{node.module}.{a.name}" for a in node.names}
+    return mods
+
+
 def test_only_upstream_and_clef_create_http_clients():
+    """No module other than upstream.py and clef.py may import an HTTP client library."""
     pkg = Path(__file__).resolve().parents[2] / "privacy_gateway"
     offenders = []
-    for path in pkg.glob("*.py"):
-        tree = ast.parse(path.read_text())
-        for node in ast.walk(tree):
-            name = None
-            if isinstance(node, ast.Call):
-                f = node.func
-                name = f.attr if isinstance(f, ast.Attribute) else f.id if isinstance(f, ast.Name) else None
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                mods = [a.name for a in node.names] + ([node.module] if isinstance(node, ast.ImportFrom) and node.module else [])
-                if any(m and m.split(".")[0] in ("requests", "urllib3", "aiohttp", "http") for m in mods):
-                    offenders.append(f"{path.name}: imports {mods}")
-                if any(m in ("urlopen", "Request") for m in mods):
-                    offenders.append(f"{path.name}: imports {mods}")
-            if name in ("AsyncClient", "Client", "AsyncHTTPTransport", "HTTPTransport", "stream", "urlopen") or (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "httpx"
-            ):
-                if path.name not in ("upstream.py", "clef.py"):
-                    offenders.append(f"{path.name}:{node.lineno}")
+    for path in sorted(pkg.glob("*.py")):
+        if path.name in ("upstream.py", "clef.py"):
+            continue
+        for mod in _imported_modules(ast.parse(path.read_text())):
+            if any(mod == m or mod.startswith(m + ".") for m in HTTP_CLIENT_MODULES):
+                offenders.append(f"{path.name}: {mod}")
     assert offenders == []
+
+
+def test_static_check_detects_violations(tmp_path):
+    tree = ast.parse("import httpx\nfrom urllib.request import urlopen\n")
+    mods = _imported_modules(tree)
+    assert "httpx" in mods and "urllib.request" in mods
