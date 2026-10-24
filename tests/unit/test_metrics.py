@@ -136,7 +136,7 @@ async def test_expected_series_present(gw):
         "privacy_clef_input_tokens", "privacy_inflight_requests", "privacy_config_info", "privacy_build_info", "privacy_up",
     ]:
         assert f"# TYPE {name.removesuffix('_total')}" in text, name
-    assert 'privacy_egress_total{route="public",result="blocked"} ' in text  # pre-created series
+    assert 'privacy_egress_total{result="blocked",route="public"} ' in text  # pre-created series
     assert 'privacy_up{dependency="redis"} 1.0' in text
 
 
