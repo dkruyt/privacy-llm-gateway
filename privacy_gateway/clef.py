@@ -178,6 +178,10 @@ class ClefClient:
 
     async def classify(self, request_state: dict[str, Any]) -> ClefResult:
         body, _ = self.payload(request_state)
+        return await self.send(body)
+
+    async def send(self, body: dict[str, Any]) -> ClefResult:
+        """POST a payload built by payload() and validate the answer."""
         try:
             resp = await self._client.post(self._cfg.url, content=compact_json(body).encode("utf-8"))
         except httpx.TimeoutException:
