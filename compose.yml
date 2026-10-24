@@ -31,7 +31,7 @@ services:
     depends_on: [redis]
     networks: [backend]
     ports:
-      - "8080:8080"
+      - "${GATEWAY_PORT:-8080}:8080"
       - "127.0.0.1:9090:9090"      # /metrics: localhost only
     extra_hosts: ["host.docker.internal:host-gateway"]   # local model server on the host
     environment:
@@ -41,6 +41,30 @@ services:
     volumes:
       - ./config.yaml:/etc/privacy-gateway/config.yaml:ro
     stop_signal: SIGTERM
+    restart: unless-stopped
+
+  # Open WebUI, wired to the gateway only: models "auto" and "local" come from the
+  # gateway's /v1/models. Needs an auth.keys entry {id: openwebui, sha256: <sha256 of
+  # OPENWEBUI_GATEWAY_KEY>} in config.yaml.
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:v0.12.3
+    depends_on: [gateway]
+    networks: [backend]
+    ports:
+      - "${OPENWEBUI_PORT:-3000}:8080"
+    environment:
+      OPENAI_API_BASE_URL: http://gateway:8080/v1
+      OPENAI_API_KEY: ${OPENWEBUI_GATEWAY_KEY:-}
+      ENABLE_OPENAI_API: "true"
+      ENABLE_OLLAMA_API: "false"           # no direct model connections that bypass the gateway
+      DEFAULT_MODELS: auto
+      TASK_MODEL_EXTERNAL: local           # titles/tags/follow-ups: always on the local model
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-}
+      ANONYMIZED_TELEMETRY: "false"
+      DO_NOT_TRACK: "true"
+      SCARF_NO_ANALYTICS: "true"
+    volumes:
+      - openwebui-data:/app/backend/data
     restart: unless-stopped
 
   # ------------------------------------------------------------------ integration tests (profile: test)
@@ -115,6 +139,9 @@ services:
       MOCK_LOCAL_URL: http://mock-local:8000
       MOCK_CLEF_URL: http://mock-clef:8000
     depends_on: [gateway-test, gateway-noredis]
+
+volumes:
+  openwebui-data: {}
 
 networks:
   backend: {}
