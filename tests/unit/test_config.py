@@ -133,7 +133,7 @@ class _Log:
     def __init__(self):
         self.events = []
 
-    def event(self, name, **kw):
+    def event(self, name, level=None, **kw):
         self.events.append((name, kw))
 
 

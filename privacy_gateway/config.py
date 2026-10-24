@@ -13,6 +13,7 @@ Secrets are never written in the YAML. A secret field accepts only
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import threading
@@ -539,7 +540,7 @@ class ConfigHolder:
             except Exception as exc:  # noqa: BLE001 - any failure keeps the old config
                 detail = str(exc) if isinstance(exc, ConfigError) else type(exc).__name__
                 if self._log:
-                    self._log.event("config_reload", result="failed", error=detail)
+                    self._log.event("config_reload", level=logging.WARNING, result="failed", error=detail)
                 if self._on_reload:
                     self._on_reload(False, None)
                 return False
