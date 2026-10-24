@@ -1,0 +1,122 @@
+# privacy-gateway
+#
+#   Production-style:   cp config.example.yaml config.yaml   (edit; set server.metrics_listen: 0.0.0.0:9090)
+#                       printf '%s' "$LOCAL_KEY" > secrets/local_key ... (see README)
+#                       docker compose up -d --build
+#
+#   Integration tests:  tests/integration/run.sh
+#                       (= docker compose --profile test up ... on an internal network
+#                        with no internet access)
+
+name: privacy-gateway
+
+x-hardening: &hardening
+  read_only: true
+  tmpfs: ["/tmp:size=64m,mode=1777"]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  # ------------------------------------------------------------------ production
+  redis:
+    image: redis:8.10.2-alpine3.23
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-ttl"]
+    networks: [backend]
+    restart: unless-stopped
+
+  gateway:
+    build: {context: ., target: runtime}
+    image: privacy-gateway:0.1.0
+    <<: *hardening
+    depends_on: [redis]
+    networks: [backend]
+    ports:
+      - "8080:8080"
+      - "127.0.0.1:9090:9090"      # /metrics: localhost only
+    extra_hosts: ["host.docker.internal:host-gateway"]   # local model server on the host
+    environment:
+      LOCAL_KEY: ${LOCAL_KEY:-}
+      PUBLIC_KEY: ${PUBLIC_KEY:-}
+      CLEF_KEY: ${CLEF_KEY:-}
+    volumes:
+      - ./config.yaml:/etc/privacy-gateway/config.yaml:ro
+    stop_signal: SIGTERM
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------ integration tests (profile: test)
+  redis-test:
+    image: redis:8.10.2-alpine3.23
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks: [testnet]
+    profiles: [test]
+
+  mock-public:
+    build: {context: ., target: test}
+    image: privacy-gateway-test:0.1.0
+    <<: *hardening
+    profiles: [test]
+    networks: [testnet]
+    environment: {ROLE: public}
+    working_dir: /app/tests/integration
+    command: ["uvicorn", "mockserver:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"]
+
+  mock-local:
+    image: privacy-gateway-test:0.1.0
+    <<: *hardening
+    profiles: [test]
+    networks: [testnet]
+    environment: {ROLE: local}
+    working_dir: /app/tests/integration
+    command: ["uvicorn", "mockserver:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"]
+    depends_on: [mock-public]
+
+  mock-clef:
+    image: privacy-gateway-test:0.1.0
+    <<: *hardening
+    profiles: [test]
+    networks: [testnet]
+    environment: {ROLE: clef}
+    working_dir: /app/tests/integration
+    command: ["uvicorn", "mockserver:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"]
+    depends_on: [mock-public]
+
+  gateway-test:
+    image: privacy-gateway:0.1.0
+    build: {context: ., target: runtime}
+    <<: *hardening
+    profiles: [test]
+    networks: [testnet]
+    env_file: [tests/integration/test.env]
+    volumes:
+      - ./tests/integration/config.yaml:/etc/privacy-gateway/config.yaml:ro
+    depends_on: [redis-test, mock-public, mock-local, mock-clef]
+
+  gateway-noredis:          # same config, Redis unreachable
+    image: privacy-gateway:0.1.0
+    <<: *hardening
+    profiles: [test]
+    networks: [testnet]
+    env_file: [tests/integration/test.env]
+    volumes:
+      - ./tests/integration/config-noredis.yaml:/etc/privacy-gateway/config.yaml:ro
+    depends_on: [gateway-test]
+
+  test-runner:
+    image: privacy-gateway-test:0.1.0
+    <<: *hardening
+    profiles: [test]
+    networks: [testnet]
+    env_file: [tests/integration/test.env]
+    environment:
+      GATEWAY_URL: http://gateway-test:8080
+      GATEWAY_METRICS_URL: http://gateway-test:9090
+      GATEWAY_NOREDIS_URL: http://gateway-noredis:8080
+      MOCK_PUBLIC_URL: http://mock-public:8000
+      MOCK_LOCAL_URL: http://mock-local:8000
+      MOCK_CLEF_URL: http://mock-clef:8000
+    depends_on: [gateway-test, gateway-noredis]
+
+networks:
+  backend: {}
+  testnet:
+    internal: true            # no route to the internet

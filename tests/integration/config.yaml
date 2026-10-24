@@ -1,0 +1,69 @@
+# Integration-test config (compose profile "test"). Hosts are compose services.
+server:
+  listen: 0.0.0.0:8080
+  metrics_listen: 0.0.0.0:9090        # reachable by the test runner (internal network only)
+  metrics_auth_token: "${METRICS_TOKEN}"
+  workers: 1
+  request_max_bytes: 2000000
+auth:
+  keys:
+    - {id: openwebui, sha256: "c7c6c0d9b8b6215d8673130c6eed281708b3bfd4721d35b4dc174ade70d00aef"}
+    - {id: n8n, sha256: "055e384283464359ab1df45b74c5f68aee4c06c47cdfbdc3c5e319a81f17b8c2"}
+upstreams:
+  local:
+    base_url: http://mock-local:8000/v1
+    model: local-test-model
+    api_key: "${LOCAL_KEY}"
+    timeout_s: 3
+    passthrough_paths: ["/embeddings"]
+  public:
+    base_url: http://mock-public:8000/v1
+    model: public-test-model
+    api_key: "${PUBLIC_KEY}"
+    timeout_s: 10
+  local_hosts: [mock-local, mock-clef]
+clef:
+  url: http://mock-clef:8000/v1/systemone
+  model: clef-flash
+  api_key: "${CLEF_KEY}"
+  timeout_s: 2
+  max_state_chars: 20000
+redis:
+  url: redis://redis-test:6379/0
+stamp:
+  key_file: null
+policy:
+  session:
+    ttl_seconds: 60
+  documents:
+    allow_public: false
+    max_bytes: 1000000
+    max_pages: 50
+    min_text_chars: 20
+  categories:
+    public:
+      description: "General knowledge or generic tasks with no personal, secret or internal content."
+    personal_data:
+      description: "Personal data."
+      question: "Does the request contain personal data?"
+    credentials_secrets:
+      description: "Credentials or secrets."
+      question: "Does the request contain credentials or secrets?"
+    private_document:
+      description: "Private documents."
+      question: "Does the request contain a private document?"
+    confidential_business:
+      description: "Confidential business information."
+      question: "Does the request contain confidential business information?"
+    proprietary_code:
+      description: "Proprietary code or infrastructure."
+      question: "Does the request contain proprietary code?"
+    uncertain:
+      description: "Cannot tell."
+  detectors:
+    internal_domains: [corp.example, intra.example.nl]
+    confidential_markers: [vertrouwelijk, internal use only]
+    custom_patterns:
+      project_codes: '\bPRJ-\d{4,}\b'
+logging:
+  level: INFO

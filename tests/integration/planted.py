@@ -1,0 +1,28 @@
+"""Every sensitive value the integration suite sends. After the run, the gateway logs,
+the /metrics output and everything mock-public received must contain none of them."""
+
+PLANTED = [
+    "jan.devries.planted@example.com",
+    "+31 6 1234 5678",
+    "06-87654321",
+    "NL91ABNA0417164300",
+    "4111 1111 1111 1111",
+    "111222333",
+    "10.20.30.40",
+    "AKIAZ7Q3XWERTYUIOPAS",
+    "ghp_" + "Q" * 36,
+    "sk-proj-" + "Zx9" * 10,
+    "xoxb-" + "123456789012-plantedslacktoken",
+    "AIza" + "P" * 35,
+    "sk_live_" + "PlantedStripeKey0001",
+    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJwbGFudGVkIn0.c2lnbmF0dXJlcGxhbnRlZA",
+    "Bearer plantedbearertoken0123456789",
+    "password = PlantedHunter2",
+    "postgres://admin:PlantedPw@db.host/app",
+    "wiki.corp.example",
+    "VERTROUWELIJK",
+    "PRJ-90210",
+    "-----BEGIN RSA PRIVATE KEY-----",
+    "SENSITIVE_KEYWORD",
+    "planted-session-id-xyz",
+]
