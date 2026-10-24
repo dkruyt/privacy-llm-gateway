@@ -1,0 +1,64 @@
+# Prometheus alert rules for privacy-gateway.
+#   rule_files: [/etc/prometheus/rules/privacy-gateway-alerts.yml]
+# Validate: promtool check rules prometheus/alerts.yml
+groups:
+  - name: privacy-gateway
+    rules:
+      # The egress guard refused an outbound call. This should never happen: it means a
+      # code path tried to send a body to the public provider that was not stamped by
+      # the classifier. Investigate immediately.
+      - alert: PrivacyGatewayEgressBlocked
+        expr: sum by (instance) (privacy_egress_total{result="blocked"}) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "privacy-gateway egress guard blocked an outbound call on {{ $labels.instance }}"
+          description: "privacy_egress_total{result=\"blocked\"} > 0. Check logs for event=blocked_external_call."
+
+      # Clef failing: everything is routed local (safe, but the local model takes all load).
+      - alert: PrivacyGatewayClefErrorRatioHigh
+        expr: |
+          sum by (instance) (rate(privacy_clef_calls_total{result!="ok"}[5m]))
+            / sum by (instance) (rate(privacy_clef_calls_total[5m])) > 0.20
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Clef error ratio above 20% for 10 minutes on {{ $labels.instance }}"
+          description: "See privacy_clef_calls_total by result (timeout, transport_error, http_error, invalid)."
+
+      # Redis down: sticky sessions unavailable; every "auto" request goes local.
+      - alert: PrivacyGatewayRedisDown
+        expr: privacy_up{dependency="redis"} == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "privacy-gateway cannot reach Redis on {{ $labels.instance }}"
+          description: "All auto requests are routed local with reason session_store_unavailable."
+
+      # Public share dropped to 0 while there is auto traffic and there was public traffic
+      # yesterday: usually Clef is down or returning invalid answers.
+      - alert: PrivacyGatewayPublicShareDroppedToZero
+        expr: |
+          sum by (instance) (rate(privacy_requests_total{requested="auto", route="public"}[30m])) == 0
+          and sum by (instance) (rate(privacy_requests_total{requested="auto"}[30m])) > 0
+          and sum by (instance) (rate(privacy_requests_total{requested="auto", route="public"}[1h] offset 1d)) > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "No auto request went public for 30 minutes on {{ $labels.instance }}"
+          description: "Check privacy_up{dependency=\"clef\"}, privacy_clef_calls_total and privacy_route_reasons_total."
+
+      # Additional (optional) rules.
+      - alert: PrivacyGatewayLocalModelDown
+        expr: privacy_up{dependency="local"} == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Local model server unreachable from {{ $labels.instance }}"
+          description: "Sensitive requests fail with 502/504; there is no fallback to the public provider."
+
+      - alert: PrivacyGatewayConfigReloadFailed
+        expr: increase(privacy_config_reloads_total{result="failed"}[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "A SIGHUP config reload was rejected on {{ $labels.instance }}"
+          description: "The previous config is still active. Run privacy-gateway check-config."
