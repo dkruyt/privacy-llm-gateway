@@ -18,6 +18,7 @@ from collections.abc import Iterable
 
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
+    disable_created_metrics,
     CollectorRegistry,
     Counter,
     Gauge,
@@ -27,6 +28,7 @@ from prometheus_client import (
 
 from . import __version__
 
+disable_created_metrics()  # no *_created series
 MULTIPROCESS = bool(os.environ.get("PROMETHEUS_MULTIPROC_DIR"))
 REGISTRY = CollectorRegistry(auto_describe=True)
 
