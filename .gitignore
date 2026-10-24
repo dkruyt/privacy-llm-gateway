@@ -8,3 +8,4 @@ htmlcov/
 .env.*
 !.env.example
 secrets/
+/config.yaml
