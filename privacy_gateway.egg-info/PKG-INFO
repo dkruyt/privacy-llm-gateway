@@ -1,0 +1,39 @@
+Metadata-Version: 2.4
+Name: privacy-gateway
+Version: 0.1.0
+Summary: Privacy-aware OpenAI-compatible LLM gateway: classify locally, route sensitive traffic to a local model
+Requires-Python: ==3.12.*
+Requires-Dist: fastapi==0.162.0
+Requires-Dist: starlette==1.10.0
+Requires-Dist: uvicorn==0.54.0
+Requires-Dist: h11==0.16.0
+Requires-Dist: click==8.5.0
+Requires-Dist: httpx==0.28.1
+Requires-Dist: httpcore==1.0.9
+Requires-Dist: anyio==4.15.1
+Requires-Dist: idna==3.20
+Requires-Dist: certifi==2026.10.23
+Requires-Dist: pydantic==2.14.1
+Requires-Dist: pydantic-core==2.50.1
+Requires-Dist: annotated-types==0.8.0
+Requires-Dist: typing-extensions==4.16.0
+Requires-Dist: typing-inspection==0.4.4
+Requires-Dist: annotated-doc==0.0.5
+Requires-Dist: pyyaml==6.0.3
+Requires-Dist: redis==8.1.0
+Requires-Dist: prometheus-client==0.26.0
+Requires-Dist: detect-secrets==1.5.0
+Requires-Dist: requests==2.34.2
+Requires-Dist: urllib3==2.8.0
+Requires-Dist: charset-normalizer==3.5.2
+Requires-Dist: pypdf==6.21.2
+Provides-Extra: test
+Requires-Dist: pytest==9.1.1; extra == "test"
+Requires-Dist: pytest-asyncio==1.4.0; extra == "test"
+Requires-Dist: respx==0.23.1; extra == "test"
+Requires-Dist: pytest-cov==7.1.0; extra == "test"
+Requires-Dist: coverage==7.17.0; extra == "test"
+Requires-Dist: iniconfig==2.3.1; extra == "test"
+Requires-Dist: pluggy==1.7.0; extra == "test"
+Requires-Dist: packaging==26.3; extra == "test"
+Requires-Dist: pygments==2.21.0; extra == "test"
