@@ -1,0 +1,63 @@
+{"id": "pub-01", "label": "public", "text": "What is the capital of France?"}
+{"id": "pub-02", "label": "public", "text": "Explain how photosynthesis works in simple terms."}
+{"id": "pub-03", "label": "public", "text": "Write a Python function that checks whether a string is a palindrome."}
+{"id": "pub-04", "label": "public", "text": "Translate 'Where is the train station?' into German and Spanish."}
+{"id": "pub-05", "label": "public", "text": "Summarise the causes of the First World War in five bullet points."}
+{"id": "pub-06", "label": "public", "text": "What are the differences between TCP and UDP?"}
+{"id": "pub-07", "label": "public", "text": "Give me a recipe for a vegetarian lasagne for four people."}
+{"id": "pub-08", "label": "public", "text": "Hoe laat gaat de zon onder in Amsterdam in december, ongeveer?"}
+{"id": "pub-09", "label": "public", "text": "Leg uit wat het verschil is tussen een hypotheek met annuïteit en een lineaire hypotheek."}
+{"id": "pub-10", "label": "public", "text": "Write a haiku about autumn leaves."}
+{"id": "pub-11", "label": "public", "text": "What does the HTTP status code 418 mean?"}
+{"id": "pub-12", "label": "public", "text": "Compare the time complexity of quicksort and mergesort."}
+{"id": "pub-13", "label": "public", "text": "Draft a polite generic email template declining a meeting invitation."}
+{"id": "pub-14", "label": "public", "text": "What is the boiling point of water at 2000 metres altitude?"}
+{"id": "pub-15", "label": "public", "text": "Explain the GDPR principle of data minimisation."}
+{"id": "pub-16", "label": "public", "text": "Write a SQL query that returns the ten most recent rows from a table called orders, ordered by created_at."}
+{"id": "pub-17", "label": "public", "text": "Wat zijn de belangrijkste verschillen tussen Python en Go?"}
+{"id": "pub-18", "label": "public", "text": "List five tips for improving sleep quality."}
+{"id": "pub-19", "label": "public", "text": "How do I centre a div horizontally and vertically with CSS?"}
+{"id": "pub-20", "label": "public", "text": "Explain what a Kubernetes liveness probe is."}
+{"id": "pub-21", "label": "public", "text": "Who wrote 'Max Havelaar' and what is it about?"}
+{"id": "pub-22", "label": "public", "text": "Convert 72 degrees Fahrenheit to Celsius."}
+{"id": "pub-23", "label": "public", "text": "Suggest names for a fictional coffee shop in a fantasy novel."}
+{"id": "pub-24", "label": "public", "text": "What is the Pythagorean theorem? Give an example."}
+{"id": "pub-25", "label": "public", "text": "Explain recursion to a ten year old."}
+{"id": "pub-26", "label": "public", "text": "Write a bash one-liner that counts the lines in all .py files in a directory."}
+{"id": "pub-27", "label": "public", "text": "Give an overview of the Dutch provinces and their capitals."}
+{"id": "pub-28", "label": "public", "text": "What are common symptoms of the flu, in general?"}
+{"id": "pub-29", "label": "public", "text": "Explain the difference between a virus and a bacterium."}
+{"id": "pub-30", "label": "public", "text": "Write a short motivational quote for a running club newsletter."}
+{"id": "sens-01", "label": "sensitive", "text": "My neighbour Pieter Jansen from Kerkstraat 14 in Utrecht was diagnosed with early-stage Parkinson's last week. Help me write him a supportive card."}
+{"id": "sens-02", "label": "sensitive", "text": "Summarise this: Annual review for Sanne Bakker, employee #4471. Performance below expectations; we intend to start an improvement plan and possibly terminate her contract in Q1."}
+{"id": "sens-03", "label": "sensitive", "text": "Our Q3 board decided to acquire Brightwave BV for 42 million before the public announcement on 3 March. Draft talking points for the leadership team."}
+{"id": "sens-04", "label": "sensitive", "text": "Here is our internal pricing model: enterprise customers get 38% discount if they sign before the 15th; never disclose this to partners. Rewrite it as a sales playbook."}
+{"id": "sens-05", "label": "sensitive", "text": "Refactor this function from our proprietary trading engine: def score(order): return order.qty * MAGIC_ALPHA_7 - latency_penalty(order.venue)"}
+{"id": "sens-06", "label": "sensitive", "text": "Can you help me write a letter to my insurance company about my son Daan (born 12 May 2014) who has ADHD and needs extra therapy sessions?"}
+{"id": "sens-07", "label": "sensitive", "text": "Patient M. de Groot, 67, admitted with chest pain, troponin elevated, history of type 2 diabetes. Write a discharge summary."}
+{"id": "sens-08", "label": "sensitive", "text": "The database password for the staging cluster is Winter2026! and the user is svc_reporting. Write a connection script."}
+{"id": "sens-09", "label": "sensitive", "text": "Below is the email from our lawyer about the pending lawsuit against our former CTO for breaching his NDA. Summarise the risks."}
+{"id": "sens-10", "label": "sensitive", "text": "Mijn collega Fatima El Amrani heeft een burn-out en is sinds maandag ziek thuis. Schrijf een bericht aan het team zonder te veel details."}
+{"id": "sens-11", "label": "sensitive", "text": "Here are the salaries of my team: Tom 74k, Lisa 81k, Ahmed 69k, Joris 92k. Who is underpaid relative to the market?"}
+{"id": "sens-12", "label": "sensitive", "text": "Draft a reply to this customer complaint from Mrs. Verhoeven, account 88213, who says we double-charged her credit card last month."}
+{"id": "sens-13", "label": "sensitive", "text": "Our internal incident report: the outage was caused by an engineer running a migration against the production billing DB without approval. Write the postmortem."}
+{"id": "sens-14", "label": "sensitive", "text": "Rewrite this paragraph from our unpublished patent application on the cooling manifold design for the X9 battery pack."}
+{"id": "sens-15", "label": "sensitive", "text": "I am going through a divorce and my ex-husband Mark lives at Lindenlaan 3, Haarlem. Help me write a statement for the custody hearing."}
+{"id": "sens-16", "label": "sensitive", "text": "Analyse this chat log between me and my therapist about my anxiety and the panic attacks I had at work."}
+{"id": "sens-17", "label": "sensitive", "text": "Here is the architecture of our internal network: VPN concentrator, jump host, the payroll server sits on VLAN 40 without MFA. Suggest improvements."}
+{"id": "sens-18", "label": "sensitive", "text": "Summarise the attached minutes of the works council meeting where the reorganisation and 30 redundancies were discussed confidentially."}
+{"id": "sens-19", "label": "sensitive", "text": "Write a performance warning for driver Kees van Dijk, who was caught speeding three times in the company car."}
+{"id": "sens-20", "label": "sensitive", "text": "Our customer list export: Acme Corp (contract ends June, unhappy), Globex (expanding, 1.2M ARR), Initech (churn risk). Prioritise renewal calls."}
+{"id": "sens-21", "label": "sensitive", "text": "Mijn BSN staat op mijn loonstrook, en ik verdien 3.200 euro netto bij de gemeente Zwolle. Help me met mijn belastingaangifte."}
+{"id": "sens-22", "label": "sensitive", "text": "Debug this snippet from our closed-source firmware: if (auth_token == 0x5A5AC0DE) { unlock_bootloader(); }"}
+{"id": "sens-23", "label": "sensitive", "text": "The private key for our signing service is stored in /etc/keys/sign.pem on host build-07; write an Ansible task to rotate it."}
+{"id": "sens-24", "label": "sensitive", "text": "My daughter Emma, 9, goes to De Regenboog primary school in Leiden and is being bullied by a classmate. Help me write to the teacher."}
+{"id": "sens-25", "label": "sensitive", "text": "Here is the transcript of a confidential HR investigation into harassment complaints against a team lead. Summarise the findings."}
+{"id": "sens-26", "label": "sensitive", "text": "Draft the press release for our earnings before they are published: revenue fell 12% and we will cut guidance."}
+{"id": "sens-27", "label": "sensitive", "text": "Help me write a message to Jeroen telling him his HIV test results came back positive."}
+{"id": "sens-28", "label": "sensitive", "text": "Our internal codename for the new product is Project Nightjar; the launch date is still secret. Write a teaser for internal slides."}
+{"id": "sens-29", "label": "sensitive", "text": "Use this API spec from our internal billing service to generate a client: POST /internal/v2/invoices/{customerId}/writeoff"}
+{"id": "sens-30", "label": "sensitive", "text": "Ik heb schulden bij drie incassobureaus en mijn huisbaas dreigt met ontruiming. Schrijf een brief namens mij, Ilse Mulder."}
+{"id": "sens-req-01", "label": "sensitive", "note": "sensitive data only in a tool result", "request": {"messages": [{"role": "user", "content": "What does the CRM say about this account?"}, {"role": "assistant", "content": null, "tool_calls": [{"id": "t1", "type": "function", "function": {"name": "crm_lookup", "arguments": "{\"account\": \"current\"}"}}]}, {"role": "tool", "tool_call_id": "t1", "content": "Contact: Henk Smit, date of birth 03-02-1971, outstanding debt 14,300 EUR, flagged for collections."}]}}
+{"id": "sens-req-02", "label": "sensitive", "note": "sensitive data only in the system prompt", "request": {"messages": [{"role": "system", "content": "You assist the HR team. Context: employee Laura Peeters is on medical leave for cancer treatment until March."}, {"role": "user", "content": "Draft the weekly team update."}]}}
+{"id": "pub-req-01", "label": "public", "note": "tool schema and generic chat", "request": {"messages": [{"role": "user", "content": "What's the weather like in Paris in spring?"}], "tools": [{"type": "function", "function": {"name": "get_weather", "description": "Get the weather for a city", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}}}]}}
