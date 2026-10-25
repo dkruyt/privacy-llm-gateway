@@ -62,13 +62,9 @@ def install_function(client: Client) -> None:
         "content": SOURCE.read_text(),
         "meta": {"description": "auto/local via the privacy gateway, with a local/public status per answer."},
     }
-    try:
-        fn = client.call("GET", f"/api/v1/functions/id/{FUNCTION_ID}")
-    except urllib.error.HTTPError as exc:
-        if exc.code not in (400, 404):
-            raise
-        fn = None
-    if fn:
+    # Look it up in the list: a missing id answers 401, not 404.
+    existing = {f["id"] for f in client.call("GET", "/api/v1/functions/")}
+    if FUNCTION_ID in existing:
         fn = client.call("POST", f"/api/v1/functions/id/{FUNCTION_ID}/update", form)
         print(f"updated function {FUNCTION_ID}")
     else:
