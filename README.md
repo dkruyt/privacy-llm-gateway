@@ -316,6 +316,36 @@ which would print skipped secret values, is silenced.
     - It prints *leaked* (sensitive → public) and *released* (public → public) for the current config and a sweep of each threshold, for Clef alone and for the full pipeline.
     - It exits 1 if the current config leaks. `--output` writes scores only, never text.
 
+### Open WebUI
+
+`docker compose up -d` also starts Open WebUI on http://localhost:3000 (`OPENWEBUI_PORT`). It reaches the
+gateway only through the **Privacy Gateway** pipe function ([`openwebui/privacy_gateway_pipe.py`](openwebui/privacy_gateway_pipe.py)).
+The pipe offers the models `auto` and `local`, sends each request to the gateway, and shows a status
+line above every answer built from the `x-privacy-*` response headers:
+
+| Status | Meaning |
+|---|---|
+| `🌐 Public model` | `auto`, every check agreed: handled by the public provider |
+| `🔒 Local model · sensitive: detector:email` | `auto`, routed local; verdict and reason codes (valve `SHOW_REASONS`) |
+| `🔒 Local model (selected)` | model `local` was chosen |
+
+The answer itself is relayed unchanged. The pipe sends the Open WebUI chat id as `x-session-id`
+(valve `SEND_CHAT_ID_AS_SESSION`), so sticky pinning follows the chat. Title, tag and follow-up
+generation run on `privacy_gateway.local` and show no status.
+
+Install or update the function after the first start, and after every change to the pipe:
+
+```bash
+python3 openwebui/install.py --url http://localhost:3000
+```
+
+It signs in as admin (env `OPENWEBUI_TOKEN`, or prompts for e-mail and password), creates or updates
+the function, disables the direct OpenAI connection, and sets the task and default models. The compose
+environment covers these settings only for a fresh Open WebUI database. The gateway key comes from
+`PRIVACY_GATEWAY_KEY` (`OPENWEBUI_GATEWAY_KEY` in `.env`), not from the function's valves. Pipe models
+without a model entry are visible to admins only: to give users access, open
+*Admin Panel → Settings → Models* and set access on `auto` and `local`.
+
 ### Monitoring stack (Prometheus + Grafana)
 
 `docker compose up -d` also starts Prometheus and Grafana, both bound to localhost:

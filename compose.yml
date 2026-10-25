@@ -43,9 +43,12 @@ services:
     stop_signal: SIGTERM
     restart: unless-stopped
 
-  # Open WebUI, wired to the gateway only: models "auto" and "local" come from the
-  # gateway's /v1/models. Needs an auth.keys entry {id: openwebui, sha256: <sha256 of
-  # OPENWEBUI_GATEWAY_KEY>} in config.yaml.
+  # Open WebUI, wired to the gateway only, through the "Privacy Gateway" pipe function
+  # (openwebui/privacy_gateway_pipe.py; install it with openwebui/install.py). The pipe
+  # offers "auto" and "local" and shows per answer whether the local or public model
+  # handled it. Needs an auth.keys entry {id: openwebui, sha256: <sha256 of
+  # OPENWEBUI_GATEWAY_KEY>} in config.yaml. The settings below only apply to a fresh
+  # Open WebUI database; install.py sets them on an existing one.
   openwebui:
     image: ghcr.io/open-webui/open-webui:v0.12.3
     depends_on: [gateway]
@@ -53,12 +56,12 @@ services:
     ports:
       - "${OPENWEBUI_PORT:-3000}:8080"
     environment:
-      OPENAI_API_BASE_URL: http://gateway:8080/v1
-      OPENAI_API_KEY: ${OPENWEBUI_GATEWAY_KEY:-}
-      ENABLE_OPENAI_API: "true"
+      PRIVACY_GATEWAY_URL: http://gateway:8080/v1    # read by the pipe function
+      PRIVACY_GATEWAY_KEY: ${OPENWEBUI_GATEWAY_KEY:-}
+      ENABLE_OPENAI_API: "false"           # models come from the pipe, not a direct connection
       ENABLE_OLLAMA_API: "false"           # no direct model connections that bypass the gateway
-      DEFAULT_MODELS: auto
-      TASK_MODEL_EXTERNAL: local           # titles/tags/follow-ups: always on the local model
+      DEFAULT_MODELS: privacy_gateway.auto
+      TASK_MODEL_EXTERNAL: privacy_gateway.local   # titles/tags/follow-ups: always on the local model
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-}
       ANONYMIZED_TELEMETRY: "false"
       DO_NOT_TRACK: "true"
