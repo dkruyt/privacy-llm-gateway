@@ -157,12 +157,12 @@ def _imported_modules(tree: ast.AST) -> set[str]:
     return mods
 
 
-def test_only_upstream_and_clef_create_http_clients():
-    """No module other than upstream.py and clef.py may import an HTTP client library."""
+def test_only_upstream_and_classifier_create_http_clients():
+    """No module other than upstream.py and classifier.py may import an HTTP client library."""
     pkg = Path(__file__).resolve().parents[2] / "privacy_gateway"
     offenders = []
     for path in sorted(pkg.glob("*.py")):
-        if path.name in ("upstream.py", "clef.py"):
+        if path.name in ("upstream.py", "classifier.py"):
             continue
         for mod in _imported_modules(ast.parse(path.read_text())):
             if any(mod == m or mod.startswith(m + ".") for m in HTTP_CLIENT_MODULES):

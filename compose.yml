@@ -37,7 +37,7 @@ services:
     environment:
       LOCAL_KEY: ${LOCAL_KEY:-}
       PUBLIC_KEY: ${PUBLIC_KEY:-}
-      CLEF_KEY: ${CLEF_KEY:-}
+      CLASSIFIER_KEY: ${CLASSIFIER_KEY:-}
     volumes:
       - ./config.yaml:/etc/privacy-gateway/config.yaml:ro
     stop_signal: SIGTERM
@@ -139,12 +139,12 @@ services:
     command: ["uvicorn", "mockserver:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"]
     depends_on: [mock-public]
 
-  mock-clef:
+  mock-classifier:
     image: privacy-gateway-test:0.1.0
     <<: *hardening
     profiles: [test]
     networks: [testnet]
-    environment: {ROLE: clef}
+    environment: {ROLE: classifier}
     working_dir: /app/tests/integration
     command: ["uvicorn", "mockserver:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"]
     depends_on: [mock-public]
@@ -158,7 +158,7 @@ services:
     env_file: [tests/integration/test.env]
     volumes:
       - ./tests/integration/config.yaml:/etc/privacy-gateway/config.yaml:ro
-    depends_on: [redis-test, mock-public, mock-local, mock-clef]
+    depends_on: [redis-test, mock-public, mock-local, mock-classifier]
 
   gateway-noredis:          # same config, Redis unreachable
     image: privacy-gateway:0.1.0
@@ -182,7 +182,7 @@ services:
       GATEWAY_NOREDIS_URL: http://gateway-noredis:8080
       MOCK_PUBLIC_URL: http://mock-public:8000
       MOCK_LOCAL_URL: http://mock-local:8000
-      MOCK_CLEF_URL: http://mock-clef:8000
+      MOCK_CLASSIFIER_URL: http://mock-classifier:8000
     depends_on: [gateway-test, gateway-noredis]
 
 volumes:

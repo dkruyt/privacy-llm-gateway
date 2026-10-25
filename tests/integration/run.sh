@@ -4,7 +4,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 P=(docker compose -p privacy-gateway-it --profile test)
-SERVICES=(redis-test mock-public mock-local mock-clef gateway-test gateway-noredis)
+SERVICES=(redis-test mock-public mock-local mock-classifier gateway-test gateway-noredis)
 
 cleanup() { "${P[@]}" down -v --remove-orphans >/dev/null 2>&1; }
 trap cleanup EXIT

@@ -1,4 +1,4 @@
-"""Score a labelled JSONL file through Clef and print a threshold sweep.
+"""Score a labelled JSONL file through the classifier and print a threshold sweep.
 
 Input: one JSON object per line
   {"label": "public" | "sensitive", "text": "..."}            → sent as one user message
@@ -8,7 +8,7 @@ Optional "id" and "note" fields are echoed in --output (the text never is).
 For each threshold setting the sweep reports
   leaked    sensitive examples that would be routed PUBLIC (must be 0)
   released  public examples that would be routed public (higher = more useful)
-both for Clef alone and for the full pipeline (detectors first, then Clef).
+both for the classifier alone and for the full pipeline (detectors first, then the classifier).
 
 Exit status: 0 when the CURRENT config leaks no sensitive example, 1 otherwise,
 2 on input errors.
@@ -22,9 +22,9 @@ import sys
 from dataclasses import dataclass
 from typing import Any
 
-from .clef import ClefClient, ClefError, StateTooLarge
+from .classifier import ClassifierClient, ClassifierError, StateTooLarge
 from .config import LoadedConfig, Thresholds
-from .decision import ClefResult, decide
+from .decision import ClassifierResult, decide
 from .detectors import Detectors
 from .extract import extract
 from .schemas import strip_opaque_reasoning
@@ -42,7 +42,7 @@ class Scored:
     detector_hits: list[str]
     unsupported: list[str]
     too_large: bool
-    result: ClefResult | None
+    result: ClassifierResult | None
     error: str | None
 
 
@@ -77,7 +77,7 @@ def _body(row: dict[str, Any]) -> dict[str, Any]:
 async def score_all(loaded: LoadedConfig, rows: list[dict[str, Any]], concurrency: int) -> list[Scored]:
     cfg = loaded.config
     detectors = Detectors(cfg.policy.detectors)
-    clef = ClefClient(cfg.clef, cfg.policy)
+    classifier = ClassifierClient(cfg.classifier, cfg.policy)
     sem = asyncio.Semaphore(max(1, concurrency))
 
     async def one(i: int, row: dict[str, Any]) -> Scored:
@@ -87,17 +87,17 @@ async def score_all(loaded: LoadedConfig, rows: list[dict[str, Any]], concurrenc
         too_large = False
         try:
             async with sem:
-                result = await clef.classify(ex.state)
+                result = await classifier.classify(ex.state)
         except StateTooLarge:
             too_large = True
-        except ClefError as exc:
+        except ClassifierError as exc:
             error = exc.code
         return Scored(i, str(row.get("id", i)), row["label"], hits, ex.unsupported, too_large, result, error)
 
     try:
         return list(await asyncio.gather(*(one(i, r) for i, r in enumerate(rows))))
     finally:
-        await clef.aclose()
+        await classifier.aclose()
 
 
 def _route(s: Scored, t: Thresholds, with_detectors: bool, sticky_on_uncertain: bool) -> str:
@@ -105,8 +105,8 @@ def _route(s: Scored, t: Thresholds, with_detectors: bool, sticky_on_uncertain: 
         detector_hits=s.detector_hits if with_detectors else [],
         unsupported=s.unsupported,
         too_large=s.too_large,
-        clef_result=s.result,
-        clef_error=s.error,
+        classifier_result=s.result,
+        classifier_error=s.error,
         thresholds=t,
         sticky_on_uncertain=sticky_on_uncertain,
     ).route
@@ -134,11 +134,11 @@ def report(scored: list[Scored], loaded: LoadedConfig, out=sys.stdout) -> int:
     n_sens = sum(1 for s in scored if s.label == "sensitive")
     n_pub = len(scored) - n_sens
     errors = sum(1 for s in scored if s.error)
-    print(f"examples: {len(scored)} ({n_sens} sensitive, {n_pub} public); clef errors: {errors}; "
+    print(f"examples: {len(scored)} ({n_sens} sensitive, {n_pub} public); classifier errors: {errors}; "
           f"too large: {sum(s.too_large for s in scored)}", file=out)
-    print(f"model: {loaded.config.clef.model}   config thresholds: {pol.thresholds.model_dump()}", file=out)
+    print(f"model: {loaded.config.classifier.model}   config thresholds: {pol.thresholds.model_dump()}", file=out)
     print("", file=out)
-    hdr = f"{'setting':<26} {'clef only: leaked':>18} {'released':>10}   {'pipeline: leaked':>17} {'released':>10}"
+    hdr = f"{'setting':<26} {'classifier: leaked':>18} {'released':>10}   {'pipeline: leaked':>17} {'released':>10}"
     print(hdr, file=out)
     print("-" * len(hdr), file=out)
     sticky = pol.session.sticky_on_uncertain

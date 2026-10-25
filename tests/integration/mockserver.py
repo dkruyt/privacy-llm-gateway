@@ -1,13 +1,13 @@
-"""Mock model servers for the integration suite. ROLE=public|local|clef.
+"""Mock model servers for the integration suite. ROLE=public|local|classifier.
 
 Control endpoints (test network only):
-  GET  /__stats   {"count": n, "bodies": [...], "arrivals": [t, ...], "clef_done": [t, ...]}
+  GET  /__stats   {"count": n, "bodies": [...], "arrivals": [t, ...], "classifier_done": [t, ...]}
   POST /__reset
   POST /__mode    {"mode": "..."}
 
 public  counts every model call (the core assertion: sensitive → 0 calls).
 local   modes: ok | error500 | hang
-clef    modes: public | sensitive | uncertain | hang | error500 | malformed | missing |
+classifier    modes: public | sensitive | uncertain | hang | error500 | malformed | missing |
         bad_probabilities | keyword | category:<name> | high_category:<name> |
         low_confidence | low_public | manipulation | slow
         keyword: personal_data if the state contains "SENSITIVE_KEYWORD", else public.
@@ -29,17 +29,17 @@ CATEGORIES = ["public", "personal_data", "credentials_secrets", "private_documen
 SENSITIVE = [c for c in CATEGORIES if c not in ("public", "uncertain")]
 
 app = FastAPI()
-state = {"count": 0, "bodies": [], "arrivals": [], "clef_done": [], "mode": "public" if ROLE == "clef" else "ok"}
+state = {"count": 0, "bodies": [], "arrivals": [], "classifier_done": [], "mode": "public" if ROLE == "classifier" else "ok"}
 
 
 @app.get("/__stats")
 async def stats():
-    return {k: state[k] for k in ("count", "bodies", "arrivals", "clef_done", "mode")}
+    return {k: state[k] for k in ("count", "bodies", "arrivals", "classifier_done", "mode")}
 
 
 @app.post("/__reset")
 async def reset():
-    state.update(count=0, bodies=[], arrivals=[], clef_done=[], mode="public" if ROLE == "clef" else "ok")
+    state.update(count=0, bodies=[], arrivals=[], classifier_done=[], mode="public" if ROLE == "classifier" else "ok")
     return {"ok": True}
 
 
@@ -90,7 +90,7 @@ if ROLE in ("public", "local"):
         return {"object": "list", "data": [{"id": f"{ROLE}-model", "object": "model"}]}
 
 
-# ------------------------------------------------------------------ clef
+# ------------------------------------------------------------------ classifier
 
 
 def _answers(choice: str, p_choice: float = 0.95, confidence: float = 0.9, cats=None, manipulation: float = 0.01):
@@ -102,10 +102,10 @@ def _answers(choice: str, p_choice: float = 0.95, confidence: float = 0.9, cats=
     for c in SENSITIVE:
         answers[f"has_{c}"] = {"type": "noul", "noul": (cats or {}).get(c, 0.01)}
     answers["manipulation"] = {"type": "noul", "noul": manipulation}
-    return {"model": "mock-clef", "answers": answers, "usage": {"input_tokens": 100, "output_tokens": 0}}
+    return {"model": "mock-classifier", "answers": answers, "usage": {"input_tokens": 100, "output_tokens": 0}}
 
 
-if ROLE == "clef":
+if ROLE == "classifier":
 
     @app.post("/v1/systemone")
     async def systemone(req: Request):
@@ -154,4 +154,4 @@ if ROLE == "clef":
                 return _answers("uncertain", p_choice=0.7)
             return _answers("public")
         finally:
-            state["clef_done"].append(time.time())
+            state["classifier_done"].append(time.time())

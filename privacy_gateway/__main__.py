@@ -2,7 +2,7 @@
 
 serve         run the API (server.listen) and /metrics (server.metrics_listen)
 check-config  validate the config (incl. secrets) and exit 0, or print errors and exit 2
-calibrate     score a labelled JSONL file through Clef and print a threshold sweep
+calibrate     score a labelled JSONL file through the classifier and print a threshold sweep
 """
 
 from __future__ import annotations

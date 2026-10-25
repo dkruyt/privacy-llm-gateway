@@ -1,4 +1,4 @@
-"""evaluate(): extract → detectors → (short-circuit) → Clef → decide.
+"""evaluate(): extract → detectors → (short-circuit) → classifier → decide.
 
 Runs entirely before any upstream connection is opened. The caller wraps it so
 that ANY exception routes local (classifier_internal_error).
@@ -13,9 +13,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import metrics
-from .clef import ClefClient, ClefError, StateTooLarge
+from .classifier import ClassifierClient, ClassifierError, StateTooLarge
 from .config import PolicyConfig
-from .decision import ClefResult, Decision, decide
+from .decision import ClassifierResult, Decision, decide
 from .detectors import Detectors
 from .extract import Extraction, extract
 
@@ -24,15 +24,15 @@ from .extract import Extraction, extract
 class Evaluation:
     decision: Decision
     extraction: Extraction
-    clef_result: ClefResult | None = None
-    clef_error: str | None = None
+    classifier_result: ClassifierResult | None = None
+    classifier_error: str | None = None
     timings_ms: dict[str, float] = field(default_factory=dict)
 
-    def clef_scores(self) -> dict[str, Any] | None:
+    def classifier_scores(self) -> dict[str, Any] | None:
         """Scores for the decision log (numbers and category names only)."""
-        r = self.clef_result
+        r = self.classifier_result
         if r is None:
-            return {"error": self.clef_error} if self.clef_error else None
+            return {"error": self.classifier_error} if self.classifier_error else None
         return {
             "choice": r.choice,
             "p_public": round(r.probabilities.get("public", 0.0), 4),
@@ -43,13 +43,13 @@ class Evaluation:
         }
 
 
-def _observe_clef(r: ClefResult) -> None:
-    metrics.CLEF_P_PUBLIC.observe(r.probabilities.get("public", 0.0))
-    metrics.CLEF_CONFIDENCE.observe(r.confidence)
-    metrics.CLEF_CATEGORY_MAX.observe(max(r.category_probs.values(), default=0.0))
-    metrics.CLEF_MANIPULATION.observe(r.manipulation)
+def _observe_classifier(r: ClassifierResult) -> None:
+    metrics.CLASSIFIER_P_PUBLIC.observe(r.probabilities.get("public", 0.0))
+    metrics.CLASSIFIER_CONFIDENCE.observe(r.confidence)
+    metrics.CLASSIFIER_CATEGORY_MAX.observe(max(r.category_probs.values(), default=0.0))
+    metrics.CLASSIFIER_MANIPULATION.observe(r.manipulation)
     if r.input_tokens is not None:
-        metrics.CLEF_INPUT_TOKENS.observe(r.input_tokens)
+        metrics.CLASSIFIER_INPUT_TOKENS.observe(r.input_tokens)
 
 
 async def evaluate(
@@ -58,7 +58,7 @@ async def evaluate(
     headers: Mapping[str, str],
     policy: PolicyConfig,
     detectors: Detectors,
-    clef: ClefClient,
+    classifier: ClassifierClient,
     documents: list[str],
 ) -> Evaluation:
     """`body` is the request after document conversion (what will be forwarded)."""
@@ -71,35 +71,35 @@ async def evaluate(
     timings["detectors"] = (time.perf_counter() - t) * 1000
 
     docs_force_local = bool(documents) and not policy.documents.allow_public
-    clef_result: ClefResult | None = None
-    clef_error: str | None = None
+    classifier_result: ClassifierResult | None = None
+    classifier_error: str | None = None
     too_large = False
 
     if hits:
-        metrics.clef_skipped("detector")
+        metrics.classifier_skipped("detector")
     elif docs_force_local:
-        metrics.clef_skipped("document")
+        metrics.classifier_skipped("document")
     elif ex.unsupported:
-        metrics.clef_skipped("unsupported")
+        metrics.classifier_skipped("unsupported")
     else:
         try:
-            payload, _ = clef.payload(ex.state)  # never truncated
+            payload, _ = classifier.payload(ex.state)  # never truncated
         except StateTooLarge:
             too_large = True
-            metrics.clef_skipped("too_large")
+            metrics.classifier_skipped("too_large")
         else:
             t = time.perf_counter()
             try:
-                clef_result = await clef.send(payload)
-                metrics.CLEF_CALLS.labels(result="ok").inc()
-                _observe_clef(clef_result)
-            except ClefError as exc:
-                clef_error = exc.code
-                metrics.CLEF_CALLS.labels(result=exc.metric_result).inc()
+                classifier_result = await classifier.send(payload)
+                metrics.CLASSIFIER_CALLS.labels(result="ok").inc()
+                _observe_classifier(classifier_result)
+            except ClassifierError as exc:
+                classifier_error = exc.code
+                metrics.CLASSIFIER_CALLS.labels(result=exc.metric_result).inc()
             finally:
                 elapsed = time.perf_counter() - t
-                metrics.CLEF_SECONDS.observe(elapsed)
-                timings["clef"] = elapsed * 1000
+                metrics.CLASSIFIER_SECONDS.observe(elapsed)
+                timings["classifier"] = elapsed * 1000
 
     decision = decide(
         detector_hits=hits,
@@ -107,12 +107,12 @@ async def evaluate(
         documents=documents,
         documents_allow_public=policy.documents.allow_public,
         too_large=too_large,
-        clef_result=clef_result,
-        clef_error=clef_error,
+        classifier_result=classifier_result,
+        classifier_error=classifier_error,
         thresholds=policy.thresholds,
         sticky_on_uncertain=policy.session.sticky_on_uncertain,
     )
     total = time.perf_counter() - t0
     metrics.CLASSIFICATION_SECONDS.observe(total)
     timings["classification"] = total * 1000
-    return Evaluation(decision, ex, clef_result, clef_error, timings)
+    return Evaluation(decision, ex, classifier_result, classifier_error, timings)

@@ -207,7 +207,7 @@ class UpstreamsConfig(_Model):
         return self
 
 
-class ClefConfig(_Model):
+class ClassifierConfig(_Model):
     url: str
     model: str = Field(min_length=1)
     api_key: Secret = None
@@ -402,7 +402,7 @@ class Config(_Model):
     server: ServerConfig = Field(default_factory=ServerConfig)
     auth: AuthConfig
     upstreams: UpstreamsConfig
-    clef: ClefConfig
+    classifier: ClassifierConfig
     redis: RedisConfig = Field(default_factory=RedisConfig)
     stamp: StampConfig = Field(default_factory=StampConfig)
     policy: PolicyConfig
@@ -412,9 +412,9 @@ class Config(_Model):
     def _cross(self) -> Config:
         if self.server.workers > 1 and not self.stamp.key_file:
             raise ValueError("server.workers > 1 requires stamp.key_file")
-        if _url_host(self.clef.url) not in self.upstreams.local_hosts:
+        if _url_host(self.classifier.url) not in self.upstreams.local_hosts:
             raise ValueError(
-                "clef.url host must be listed in upstreams.local_hosts (classification stays local)"
+                "classifier.url host must be listed in upstreams.local_hosts (classification stays local)"
             )
         from .detectors import ALL_STATIC_RULES
 

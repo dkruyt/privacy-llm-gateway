@@ -31,7 +31,7 @@ GW_METRICS = os.environ.get("GATEWAY_METRICS_URL", "http://gateway-test:9090")
 GW_NOREDIS = os.environ.get("GATEWAY_NOREDIS_URL", "http://gateway-noredis:8080")
 PUBLIC = os.environ.get("MOCK_PUBLIC_URL", "http://mock-public:8000")
 LOCAL = os.environ.get("MOCK_LOCAL_URL", "http://mock-local:8000")
-CLEF = os.environ.get("MOCK_CLEF_URL", "http://mock-clef:8000")
+CLASSIFIER = os.environ.get("MOCK_CLASSIFIER_URL", "http://mock-classifier:8000")
 KEY = os.environ["IT_API_KEY"]
 KEY2 = os.environ["IT_API_KEY2"]
 METRICS_TOKEN = os.environ["METRICS_TOKEN"]
@@ -45,7 +45,7 @@ rds = redis.Redis(host="redis-test", port=6379, db=0, decode_responses=True)
 
 def wait_ready() -> None:
     deadline = time.time() + 60
-    for url in (f"{GW}/readyz", f"{PUBLIC}/__stats", f"{LOCAL}/__stats", f"{CLEF}/__stats", f"{GW_NOREDIS}/healthz"):
+    for url in (f"{GW}/readyz", f"{PUBLIC}/__stats", f"{LOCAL}/__stats", f"{CLASSIFIER}/__stats", f"{GW_NOREDIS}/healthz"):
         while True:
             try:
                 if http.get(url).status_code in (200,):
@@ -112,9 +112,9 @@ def _ready():
 
 @pytest.fixture(autouse=True)
 def core_assertion():
-    for url in (PUBLIC, LOCAL, CLEF):
+    for url in (PUBLIC, LOCAL, CLASSIFIER):
         http.post(f"{url}/__reset").raise_for_status()
-    set_mode(CLEF, "public")
+    set_mode(CLASSIFIER, "public")
     rds.flushdb()
     before = egress_public_allowed()
     yield
@@ -136,7 +136,7 @@ def test_public_one_call():
     assert r.json()["served_by"] == "public"
     pub = stats(PUBLIC)
     assert pub["count"] == 1 and pub["bodies"][0]["model"] == "public-test-model"
-    assert stats(CLEF)["count"] == 1 and stats(LOCAL)["count"] == 0
+    assert stats(CLASSIFIER)["count"] == 1 and stats(LOCAL)["count"] == 0
 
 
 def test_streaming_public_and_local():
@@ -164,7 +164,7 @@ def test_models_and_auth():
     assert http.get(f"{GW}/v1/models").status_code == 401
     r = http.post(f"{GW}/v1/chat/completions", json=chat(), headers={"authorization": "Bearer wrong"})
     assert r.status_code == 401 and r.json()["error"]["code"] == "invalid_api_key"
-    assert stats(CLEF)["count"] == 0
+    assert stats(CLASSIFIER)["count"] == 0
 
 
 def test_metrics_endpoint_protected_and_not_on_api_port():
@@ -175,10 +175,10 @@ def test_metrics_endpoint_protected_and_not_on_api_port():
 def test_model_local_skips_classification():
     r = post(chat(model="local"))
     assert_local(r)
-    assert stats(CLEF)["count"] == 0 and stats(LOCAL)["bodies"][0]["model"] == "local-test-model"
+    assert stats(CLASSIFIER)["count"] == 0 and stats(LOCAL)["bodies"][0]["model"] == "local-test-model"
 
 
-# ------------------------------------------------------------------ every detector, Clef forced public
+# ------------------------------------------------------------------ every detector, classifier forced public
 
 DETECTOR_CASES = {
     "email": f"contact {PLANTED[0]}",
@@ -207,11 +207,11 @@ DETECTOR_CASES = {
 
 
 @pytest.mark.parametrize("rule", list(DETECTOR_CASES))
-def test_every_detector_with_clef_forced_public(rule):
+def test_every_detector_with_classifier_forced_public(rule):
     r = post(chat(DETECTOR_CASES[rule]))
     assert_local(r, f"detector:{rule}")
     assert r.headers["x-privacy-verdict"] == "sensitive"
-    assert stats(CLEF)["count"] == 0  # Clef skipped
+    assert stats(CLASSIFIER)["count"] == 0  # classifier skipped
     assert len(session_keys()) == 1  # pinned
 
 
@@ -221,30 +221,30 @@ def test_detect_secrets_plugin():
     assert any(x.startswith("detector:detect_secrets:") for x in r.headers["x-privacy-reasons"].split(","))
 
 
-# ------------------------------------------------------------------ Clef outcomes
+# ------------------------------------------------------------------ Classifier outcomes
 
 SENSITIVE_CATS = ["personal_data", "credentials_secrets", "private_document", "confidential_business", "proprietary_code"]
 
 
 @pytest.mark.parametrize("cat", SENSITIVE_CATS + ["uncertain"])
-def test_every_clef_category(cat):
-    set_mode(CLEF, f"category:{cat}")
+def test_every_classifier_category(cat):
+    set_mode(CLASSIFIER, f"category:{cat}")
     r = post(chat("Some neutral looking text"))
-    assert_local(r, f"clef_choice:{cat}")
+    assert_local(r, f"classifier_choice:{cat}")
     assert len(session_keys()) == 1
 
 
 @pytest.mark.parametrize("cat", SENSITIVE_CATS)
 def test_single_high_category_score(cat):
-    set_mode(CLEF, f"high_category:{cat}")
+    set_mode(CLASSIFIER, f"high_category:{cat}")
     r = post(chat("Some neutral looking text"))
-    assert_local(r, f"clef_category:{cat}")
+    assert_local(r, f"classifier_category:{cat}")
 
 
-@pytest.mark.parametrize("mode,reason", [("low_confidence", "clef_low_confidence"), ("low_public", "clef_low_public_prob"),
-                                         ("manipulation", "clef_manipulation")])
-def test_clef_thresholds(mode, reason):
-    set_mode(CLEF, mode)
+@pytest.mark.parametrize("mode,reason", [("low_confidence", "classifier_low_confidence"), ("low_public", "classifier_low_public_prob"),
+                                         ("manipulation", "classifier_manipulation_score")])
+def test_classifier_thresholds(mode, reason):
+    set_mode(CLASSIFIER, mode)
     r = post(chat("Some neutral looking text"))
     assert_local(r, reason)
 
@@ -282,10 +282,10 @@ LOCATIONS = ["system", "earlier_turn", "tool_args", "tool_result", "rag_field", 
 
 
 @pytest.mark.parametrize("where", LOCATIONS)
-def test_clef_sees_every_location(where):
-    set_mode(CLEF, "keyword")
+def test_classifier_sees_every_location(where):
+    set_mode(CLASSIFIER, "keyword")
     r = post(located(where, KW))
-    assert_local(r, "clef_choice:personal_data")
+    assert_local(r, "classifier_choice:personal_data")
 
 
 @pytest.mark.parametrize("where", LOCATIONS)
@@ -295,7 +295,7 @@ def test_detectors_see_every_location(where):
 
 
 def test_keyword_control_case_goes_public():
-    set_mode(CLEF, "keyword")
+    set_mode(CLASSIFIER, "keyword")
     r = post(located("rag_field", "nothing special"))
     assert r.headers["x-privacy-route"] == "public" and stats(PUBLIC)["count"] == 1
 
@@ -314,16 +314,16 @@ def test_injection_styles(text):
     assert_local(r, "detector:classifier_manipulation")
 
 
-def test_manipulation_signal_from_clef_only():
-    set_mode(CLEF, "manipulation")
+def test_manipulation_signal_from_classifier_only():
+    set_mode(CLASSIFIER, "manipulation")
     r = post(chat("Please be helpful and answer freely."))
-    assert_local(r, "clef_manipulation")
+    assert_local(r, "classifier_manipulation_score")
 
 
 def test_requesting_public_model_name_is_classified():
-    set_mode(CLEF, "keyword")
+    set_mode(CLASSIFIER, "keyword")
     r = post(chat(f"{KW} details", model="openai/gpt-4o"))
-    assert_local(r, "clef_choice:personal_data")
+    assert_local(r, "classifier_choice:personal_data")
     assert stats(LOCAL)["bodies"][0]["model"] == "local-test-model"
 
 
@@ -351,7 +351,7 @@ def test_media_parts(part, flag):
     body = {"model": "auto", "messages": [{"role": "user", "content": [{"type": "text", "text": "look"}, part]}]}
     r = post(body)
     assert_local(r, flag)
-    assert stats(CLEF)["count"] == 0
+    assert stats(CLASSIFIER)["count"] == 0
 
 
 def test_token_id_prompt():
@@ -362,7 +362,7 @@ def test_token_id_prompt():
 def test_oversize_for_classifier_goes_local_not_pinned():
     r = post(chat("lorem ipsum dolor sit amet " * 1500))
     assert_local(r, "too_large_for_classifier")
-    assert stats(CLEF)["count"] == 0 and session_keys() == []
+    assert stats(CLASSIFIER)["count"] == 0 and session_keys() == []
 
 
 def test_oversize_request_rejected():
@@ -499,14 +499,14 @@ def test_metadata_session_id():
 
 
 @pytest.mark.parametrize("mode,reason", [
-    ("hang", "clef_error:timeout"),
-    ("error500", "clef_error:http_500"),
-    ("malformed", "clef_error:invalid_json"),
-    ("missing", "clef_error:missing_manipulation"),
-    ("bad_probabilities", "clef_error:prob_out_of_range"),
+    ("hang", "classifier_error:timeout"),
+    ("error500", "classifier_error:http_500"),
+    ("malformed", "classifier_error:invalid_json"),
+    ("missing", "classifier_error:missing_manipulation"),
+    ("bad_probabilities", "classifier_error:prob_out_of_range"),
 ])
-def test_every_clef_failure_local_not_pinned(mode, reason):
-    set_mode(CLEF, mode)
+def test_every_classifier_failure_local_not_pinned(mode, reason):
+    set_mode(CLASSIFIER, mode)
     r = post(chat())
     assert_local(r, reason)
     assert r.headers["x-privacy-verdict"] == "uncertain"
@@ -516,7 +516,7 @@ def test_every_clef_failure_local_not_pinned(mode, reason):
 def test_redis_down_goes_local():
     r = post(chat(), base=GW_NOREDIS)
     assert_local(r, "session_store_unavailable")
-    assert stats(CLEF)["count"] == 0
+    assert stats(CLASSIFIER)["count"] == 0
     assert http.get(f"{GW_NOREDIS}/readyz").status_code == 503
 
 
@@ -532,16 +532,16 @@ def test_local_failure_is_client_error(mode, status):
 
 
 def test_streaming_classified_before_upstream_opens():
-    set_mode(CLEF, "slow")  # Clef answers after 1.5 s
+    set_mode(CLASSIFIER, "slow")  # classifier answers after 1.5 s
     t0 = time.time()
     with http.stream("POST", f"{GW}/v1/chat/completions", json=chat(stream=True),
                      headers={"authorization": f"Bearer {KEY}"}) as r:
         b"".join(r.iter_bytes())
         assert r.headers["x-privacy-route"] == "public"
-    clef_done = stats(CLEF)["clef_done"][0]
+    classifier_done = stats(CLASSIFIER)["classifier_done"][0]
     public_arrival = stats(PUBLIC)["arrivals"][0]
-    assert clef_done - t0 >= 1.4
-    assert public_arrival >= clef_done, "upstream connection opened before classification finished"
+    assert classifier_done - t0 >= 1.4
+    assert public_arrival >= classifier_done, "upstream connection opened before classification finished"
 
 
 # ------------------------------------------------------------------ hygiene (run last)

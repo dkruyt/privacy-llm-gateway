@@ -1,7 +1,7 @@
-"""Clef (TypeSafe-compatible decision model) client: POST /v1/systemone.
+"""Classifier client: a TypeSafe-compatible decision model (e.g. Cloudflare Clef) at POST /v1/systemone.
 
 Builds the question set from the policy, sends the complete request state and
-validates the response strictly. Any deviation raises ClefError(code); the
+validates the response strictly. Any deviation raises ClassifierError(code); the
 caller routes local without pinning.
 """
 
@@ -13,12 +13,12 @@ from typing import Any
 
 import httpx
 
-from .config import ClefConfig, PolicyConfig
-from .decision import ClefResult
+from .config import ClassifierConfig, PolicyConfig
+from .decision import ClassifierResult
 
 NORMALISATION_TOLERANCE = 0.02
 
-# Fixed set of error codes (reason clef_error:<code>), plus http_<status>.
+# Fixed set of error codes (reason classifier_error:<code>), plus http_<status>.
 ERROR_CODES = (
     "timeout",
     "transport_error",
@@ -36,7 +36,7 @@ ERROR_CODES = (
 )
 
 
-class ClefError(Exception):
+class ClassifierError(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
@@ -53,7 +53,7 @@ class ClefError(Exception):
 
 
 class StateTooLarge(Exception):
-    """The compact-JSON state exceeds clef.max_state_chars. Never truncated."""
+    """The compact-JSON state exceeds classifier.max_state_chars. Never truncated."""
 
 
 def build_questions(policy: PolicyConfig) -> dict[str, Any]:
@@ -80,26 +80,26 @@ def compact_json(obj: Any) -> str:
 
 def _number(v: Any) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)):
-        raise ClefError("invalid_number")
+        raise ClassifierError("invalid_number")
     f = float(v)
     if not math.isfinite(f) or f < 0.0 or f > 1.0:
-        raise ClefError("prob_out_of_range")
+        raise ClassifierError("prob_out_of_range")
     return f
 
 
 def _answer(answers: dict[str, Any], key: str, missing_code: str, type_: str) -> dict[str, Any]:
     a = answers.get(key)
     if a is None:
-        raise ClefError(missing_code)
+        raise ClassifierError(missing_code)
     if not isinstance(a, dict) or a.get("type") != type_:
-        raise ClefError("wrong_type")
+        raise ClassifierError("wrong_type")
     return a
 
 
-def parse_response(data: Any, policy: PolicyConfig) -> ClefResult:
+def parse_response(data: Any, policy: PolicyConfig) -> ClassifierResult:
     """Strictly validate a /v1/systemone response body (already JSON-decoded)."""
     if not isinstance(data, dict) or not isinstance(data.get("answers"), dict):
-        raise ClefError("missing_answers")
+        raise ClassifierError("missing_answers")
     answers = data["answers"]
     categories = set(policy.categories)
 
@@ -113,11 +113,11 @@ def parse_response(data: Any, policy: PolicyConfig) -> ClefResult:
     choice = verdict.get("choice")
     probs = verdict.get("probabilities")
     if not isinstance(probs, dict):
-        raise ClefError("wrong_type")
+        raise ClassifierError("wrong_type")
     if not isinstance(choice, str) or choice not in categories:
-        raise ClefError("unknown_choice")
+        raise ClassifierError("unknown_choice")
     if any(not isinstance(k, str) or k not in categories for k in probs):
-        raise ClefError("unknown_choice")
+        raise ClassifierError("unknown_choice")
 
     probabilities = {k: _number(v) for k, v in probs.items()}
     confidence = _number(verdict.get("confidence"))
@@ -125,9 +125,9 @@ def parse_response(data: Any, policy: PolicyConfig) -> ClefResult:
     manipulation = _number(manip.get("noul"))
 
     if abs(sum(probabilities.values()) - 1.0) > NORMALISATION_TOLERANCE:
-        raise ClefError("probabilities_not_normalized")
+        raise ClassifierError("probabilities_not_normalized")
     if probabilities.get(choice, 0.0) < max(probabilities.values()):
-        raise ClefError("choice_not_argmax")
+        raise ClassifierError("choice_not_argmax")
 
     usage = data.get("usage")
     input_tokens = None
@@ -136,7 +136,7 @@ def parse_response(data: Any, policy: PolicyConfig) -> ClefResult:
         if isinstance(it, int) and not isinstance(it, bool) and it >= 0:
             input_tokens = it
 
-    return ClefResult(
+    return ClassifierResult(
         choice=choice,
         probabilities=probabilities,
         confidence=confidence,
@@ -146,10 +146,10 @@ def parse_response(data: Any, policy: PolicyConfig) -> ClefResult:
     )
 
 
-class ClefClient:
+class ClassifierClient:
     """One instance per config generation. Rebuilt (and the old one closed) on reload."""
 
-    def __init__(self, cfg: ClefConfig, policy: PolicyConfig, transport: httpx.AsyncBaseTransport | None = None):
+    def __init__(self, cfg: ClassifierConfig, policy: PolicyConfig, transport: httpx.AsyncBaseTransport | None = None):
         self._cfg = cfg
         self._policy = policy
         self._questions = build_questions(policy)
@@ -176,28 +176,28 @@ class ClefClient:
             raise StateTooLarge()
         return {"model": self._cfg.model, "state": state, "questions": self._questions}, size
 
-    async def classify(self, request_state: dict[str, Any]) -> ClefResult:
+    async def classify(self, request_state: dict[str, Any]) -> ClassifierResult:
         body, _ = self.payload(request_state)
         return await self.send(body)
 
-    async def send(self, body: dict[str, Any]) -> ClefResult:
+    async def send(self, body: dict[str, Any]) -> ClassifierResult:
         """POST a payload built by payload() and validate the answer."""
         try:
             resp = await self._client.post(self._cfg.url, content=compact_json(body).encode("utf-8"))
         except httpx.TimeoutException:
-            raise ClefError("timeout") from None
+            raise ClassifierError("timeout") from None
         except httpx.HTTPError:
-            raise ClefError("transport_error") from None
+            raise ClassifierError("transport_error") from None
         if resp.status_code != 200:
-            raise ClefError(f"http_{resp.status_code}")
+            raise ClassifierError(f"http_{resp.status_code}")
         try:
             data = resp.json()
         except (ValueError, UnicodeDecodeError):
-            raise ClefError("invalid_json") from None
+            raise ClassifierError("invalid_json") from None
         return parse_response(data, self._policy)
 
     async def probe(self) -> bool:
-        """Liveness probe for privacy_up{dependency="clef"}: a tiny, content-free request."""
+        """Liveness probe for privacy_up{dependency="classifier"}: a tiny, content-free request."""
         body = {
             "model": self._cfg.model,
             "state": "ping",

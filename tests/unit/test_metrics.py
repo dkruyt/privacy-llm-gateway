@@ -30,8 +30,8 @@ ALLOWED_LABELS = {
         "verdict": set(metrics.VERDICTS),
         "stream": {"true", "false"},
     },
-    "privacy_clef_calls_total": {"result": set(metrics.CLEF_RESULTS)},
-    "privacy_clef_skipped_total": {"why": set(metrics.SKIP_WHY)},
+    "privacy_classifier_calls_total": {"result": set(metrics.CLASSIFIER_RESULTS)},
+    "privacy_classifier_skipped_total": {"why": set(metrics.SKIP_WHY)},
     "privacy_session_events_total": {"event": set(metrics.SESSION_EVENTS)},
     "privacy_documents_total": {"type": set(metrics.DOC_TYPES), "result": set(metrics.DOC_RESULTS)},
     "privacy_egress_total": {"route": set(metrics.ROUTES), "result": set(metrics.EGRESS_RESULTS)},
@@ -44,8 +44,8 @@ ALLOWED_LABELS = {
 }
 REASON_RE = re.compile(
     r"^(detector:[a-z_]+|detector:custom:[a-z0-9_]+|detector:detect_secrets:[A-Za-z0-9]+|unsupported:[a-z_:]+"
-    r"|clef_error:[a-z0-9_]+|clef_choice:[a-z_]+|clef_category:[a-z_]+|document_attached:(pdf|text)"
-    r"|too_large_for_classifier|clef_low_public_prob|clef_low_confidence|clef_manipulation|session_sticky"
+    r"|classifier_error:[a-z0-9_]+|classifier_choice:[a-z_]+|classifier_category:[a-z_]+|document_attached:(pdf|text)"
+    r"|too_large_for_classifier|classifier_low_public_prob|classifier_low_confidence|classifier_manipulation_score|session_sticky"
     r"|session_store_unavailable|classifier_internal_error|not_classified|other)$"
 )
 
@@ -73,9 +73,9 @@ async def drive_traffic(c, mocks):
     await c.post(f"/v1/{s[0]}", json={"model": "auto"}, headers=AUTH)
     await c.post("/v1/chat/completions", json={"model": "auto", "messages": [{"role": "user", "content": [
         {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="}}, {"type": s[0]}]}]}, headers=AUTH)
-    mocks.clef_mode = "personal_data"
+    mocks.classifier_mode = "personal_data"
     await c.post("/v1/chat/completions", json=chat(s[0]), headers=AUTH)
-    mocks.clef_mode = "error500"
+    mocks.classifier_mode = "error500"
     await c.post("/v1/chat/completions", json=chat(s[0]), headers=AUTH)
     mocks.local_mode = "error500"
     await c.post("/v1/chat/completions", json=chat(s[1]), headers=AUTH)
@@ -128,12 +128,12 @@ async def test_expected_series_present(gw):
     await c.post("/v1/chat/completions", json=chat(), headers=AUTH)
     text = scrape()
     for name in [
-        "privacy_requests_total", "privacy_route_reasons_total", "privacy_clef_calls_total", "privacy_clef_skipped_total",
+        "privacy_requests_total", "privacy_route_reasons_total", "privacy_classifier_calls_total", "privacy_classifier_skipped_total",
         "privacy_session_events_total", "privacy_documents_total", "privacy_egress_total", "privacy_upstream_errors_total",
         "privacy_client_errors_total", "privacy_config_reloads_total", "privacy_classification_seconds",
-        "privacy_clef_seconds", "privacy_upstream_ttfb_seconds", "privacy_request_seconds", "privacy_clef_p_public",
-        "privacy_clef_confidence", "privacy_clef_category_max_prob", "privacy_clef_manipulation_prob",
-        "privacy_clef_input_tokens", "privacy_inflight_requests", "privacy_config_info", "privacy_build_info", "privacy_up",
+        "privacy_classifier_seconds", "privacy_upstream_ttfb_seconds", "privacy_request_seconds", "privacy_classifier_p_public",
+        "privacy_classifier_confidence", "privacy_classifier_category_max_prob", "privacy_classifier_manipulation_prob",
+        "privacy_classifier_input_tokens", "privacy_inflight_requests", "privacy_config_info", "privacy_build_info", "privacy_up",
     ]:
         assert f"# TYPE {name.removesuffix('_total')}" in text, name
     assert 'privacy_egress_total{result="blocked",route="public"} ' in text  # pre-created series
@@ -159,11 +159,11 @@ async def test_metrics_not_on_api_port(gw):
 
 
 def test_reason_sanitising():
-    known = {"detector:email", "clef_choice:public"}
+    known = {"detector:email", "classifier_choice:public"}
     assert metrics.safe_reason("detector:email", known) == "detector:email"
     assert metrics.safe_reason("detector:not_configured", known) == "other"
     assert metrics.safe_reason("free text with jan@example.com", known) == "other"
-    assert metrics.safe_reason("clef_error:http_503", known) == "clef_error:http_503"
+    assert metrics.safe_reason("classifier_error:http_503", known) == "classifier_error:http_503"
 
 
 async def test_reload_metric_and_config_info(gw, cfg_dict, write_cfg):
@@ -182,7 +182,7 @@ async def test_reload_metric_and_config_info(gw, cfg_dict, write_cfg):
 
 def test_known_series_precreated_at_zero():
     """increase() cannot see the first increment of a new series; known series must start at 0."""
-    metrics.init_label_sets(["svc"], ["detector:iban", "clef_choice:personal_data"])
+    metrics.init_label_sets(["svc"], ["detector:iban", "classifier_choice:personal_data"])
     get = metrics.REGISTRY.get_sample_value
     assert get("privacy_route_reasons_total", {"reason": "detector:iban"}) is not None
     assert get("privacy_route_reasons_total", {"reason": "session_sticky"}) is not None

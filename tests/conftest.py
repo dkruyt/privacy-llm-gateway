@@ -22,7 +22,7 @@ def example_dict() -> dict:
 def secret_env(monkeypatch):
     monkeypatch.setenv("LOCAL_KEY", "local-secret-value")
     monkeypatch.setenv("PUBLIC_KEY", "public-secret-value")
-    monkeypatch.setenv("CLEF_KEY", "clef-secret-value")
+    monkeypatch.setenv("CLASSIFIER_KEY", "classifier-secret-value")
 
 
 @pytest.fixture

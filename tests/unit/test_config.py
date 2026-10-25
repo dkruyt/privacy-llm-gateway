@@ -12,7 +12,7 @@ def test_example_config_is_valid(example_copy, secret_env):
     cfg = lc.config
     assert cfg.upstreams.local.api_key == "local-secret-value"
     assert cfg.upstreams.public.api_key == "public-secret-value"
-    assert cfg.clef.api_key == "clef-secret-value"
+    assert cfg.classifier.api_key == "classifier-secret-value"
     assert cfg.policy.sensitive_categories == [
         "personal_data",
         "credentials_secrets",
@@ -86,9 +86,9 @@ def test_local_upstream_must_be_local_host(cfg_dict, write_cfg):
         load_config(write_cfg(cfg_dict))
 
 
-def test_clef_must_be_local_host(cfg_dict, write_cfg):
-    cfg_dict["clef"]["url"] = "https://clef.example.com/v1/systemone"
-    with pytest.raises(ConfigError, match="clef.url"):
+def test_classifier_must_be_local_host(cfg_dict, write_cfg):
+    cfg_dict["classifier"]["url"] = "https://classifier.example.com/v1/systemone"
+    with pytest.raises(ConfigError, match="classifier.url"):
         load_config(write_cfg(cfg_dict))
 
 

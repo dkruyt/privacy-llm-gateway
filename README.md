@@ -48,7 +48,7 @@ It does not use LiteLLM or any other gateway/proxy library.
                          │        ▼
                          │   pipeline.py:  extract.py → detectors.py ─(hit)──────────┐
                          │                       │                                   │
-                         │                       └─(no hit)─▶ clef.py ──▶ Clef /v1/systemone (local)
+                         │                       └─(no hit)─▶ classifier.py ─▶ /v1/systemone (local)
                          │                                       │                   │
                          │                                       ▼                   ▼
                          │                              decision.py  decide() → Decision(route, verdict, reasons, sticky)
@@ -72,17 +72,17 @@ It does not use LiteLLM or any other gateway/proxy library.
 | `schemas.py` | Accepted request shapes (extra fields kept), routing-field blocklist. |
 | `extract.py` | Request → normalised classifier state, all strings, unsupported flags, session seed. |
 | `detectors.py` | Rule-id-only detectors (regex + checksums + detect-secrets) on raw and decoded text. |
-| `clef.py` | `/v1/systemone` client, question builder, strict response validation. |
+| `classifier.py` | `/v1/systemone` client, question builder, strict response validation. |
 | `decision.py` | Pure `decide()`. 100 % branch-covered. |
 | `documents.py` | PDF / text attachments → text parts (pypdf in a worker thread). |
 | `session.py` | Redis sticky-session store, fail-closed. |
-| `pipeline.py` | `evaluate()`: extract → detectors → short-circuit → Clef → decide. |
+| `pipeline.py` | `evaluate()`: extract → detectors → short-circuit → classifier → decide. |
 | `upstream.py` | Two `httpx.AsyncClient`s (`trust_env=False`, no redirects, no retries). Egress guard. |
 | `logs.py` | Content-free JSON logger, one decision line per request. |
-| `calibrate.py` | Labelled JSONL → Clef → threshold sweep. |
+| `calibrate.py` | Labelled JSONL → classifier → threshold sweep. |
 
-There are only three outbound destinations: Clef, the local upstream and the public
-upstream. A unit test fails if any module other than `upstream.py` or `clef.py`
+There are only three outbound destinations: the classifier, the local upstream and the public
+upstream. A unit test fails if any module other than `upstream.py` or `classifier.py`
 imports an HTTP client library. There is no telemetry.
 
 ## Request flow
@@ -95,9 +95,9 @@ imports an HTTP client library. There is no telemetry.
 5. **Sticky session**: if the session is flagged sensitive, route local (`session_sticky`). If Redis is unreachable, route local (`session_store_unavailable`) without pinning.
 6. **`pipeline.evaluate()`** runs. **Any** exception routes local (`classifier_internal_error`).
     - The extracted state is the *complete* request: every role, tool calls, tool results, tool schemas, `response_format`, `prompt`, `user` and unknown extra fields. Strings are NFKC-normalised and stripped of zero-width and bidi control characters.
-    - Detectors run on every string, plus its base64- and %-decoded variants. Any hit routes local and pins the session, and Clef is skipped.
-    - Documents (unless `documents.allow_public`), unsupported media and oversize states also skip Clef.
-    - Clef answers `verdict` (choice over the categories), `has_<category>` (noul) and `manipulation` (noul). The response is validated strictly.
+    - Detectors run on every string, plus its base64- and %-decoded variants. Any hit routes local and pins the session, and the classifier is skipped.
+    - Documents (unless `documents.allow_public`), unsupported media and oversize states also skip the classifier.
+    - The classifier answers `verdict` (choice over the categories), `has_<category>` (noul) and `manipulation` (noul). The response is validated strictly.
     - `decide()` returns public only if no reason exists at all and all four thresholds pass.
 7. **Pin**: if `decision.sticky`, the session flag is set with a TTL.
 8. **Build the outbound body**: copy the request, set `model` from config, drop gateway-only fields. Messages are never touched after classification.
@@ -119,7 +119,7 @@ cp config.example.yaml config.yaml
 
 Then edit `config.yaml`:
 
-- Set `upstreams.*`, `clef`, `redis` and `auth.keys`.
+- Set `upstreams.*`, `classifier`, `redis` and `auth.keys`.
 - For containers, set `server.metrics_listen: 0.0.0.0:9090`. The compose file only publishes it on 127.0.0.1.
 
 Create an API key for a client app and its hash for `auth.keys`:
@@ -131,13 +131,13 @@ python3 -c 'import secrets,hashlib;k=secrets.token_urlsafe(32);print("key:",k);p
 Validate the config. Secrets must be present in the environment, or as files when the config uses `{file: ...}`:
 
 ```bash
-LOCAL_KEY=... PUBLIC_KEY=... CLEF_KEY=... privacy-gateway check-config --config config.yaml
+LOCAL_KEY=... PUBLIC_KEY=... CLASSIFIER_KEY=... privacy-gateway check-config --config config.yaml
 ```
 
 Run it with Docker:
 
 ```bash
-LOCAL_KEY=... PUBLIC_KEY=... CLEF_KEY=... docker compose up -d --build
+LOCAL_KEY=... PUBLIC_KEY=... CLASSIFIER_KEY=... docker compose up -d --build
 ```
 
 Or locally (Python 3.12):
@@ -166,14 +166,14 @@ The fully commented reference is [`config.example.yaml`](config.example.yaml). S
 | `auth.keys[]` | — | `{id, sha256}`; `id` is the only client label in metrics/logs. |
 | `upstreams.local` | — | `base_url`, `model`, `api_key` (secret/null), `timeout_s`, `passthrough_paths` (default `[]`). |
 | `upstreams.public` | — | `base_url`, `model`, `api_key`, `timeout_s`. Host must not be in `local_hosts`. |
-| `upstreams.local_hosts` | — | Egress allowlist for the local route **and Clef**. |
-| `clef` | — | `url`, `model`, `api_key`, `timeout_s` (30), `max_state_chars` (32000). Host must be in `local_hosts`. |
+| `upstreams.local_hosts` | — | Egress allowlist for the local route **and the classifier**. |
+| `classifier` | — | `url`, `model`, `api_key`, `timeout_s` (30), `max_state_chars` (32000). Host must be in `local_hosts`. |
 | `redis` | — | `url`, `connect_timeout_s` (0.5), `timeout_s` (0.5). |
 | `stamp.key_file` | `null` | HMAC key file (≥ 32 bytes); `null` = random per process. |
 | `policy.thresholds` | 0.80 / 0.60 / 0.30 / 0.30 | `public_min_prob`, `min_confidence`, `category_max_prob`, `manipulation_max_prob`. **Not calibrated.** |
 | `policy.session` | 86400 / `x-session-id` / true | `ttl_seconds`, `header`, `sticky_on_uncertain`. |
 | `policy.documents` | false / 25 MiB / 300 / 20 | `allow_public`, `max_bytes`, `max_pages`, `min_text_chars`. |
-| `policy.state_notice`, `verdict_instructions`, `manipulation_instructions` | built-in | Text sent to Clef. |
+| `policy.state_notice`, `verdict_instructions`, `manipulation_instructions` | built-in | Text sent to the classifier. |
 | `policy.categories` | — | `public` and `uncertain` (description only) plus ≥ 1 sensitive category (`description` + `question`). |
 | `policy.detectors` | — | `disabled`, `internal_domains`, `confidential_markers`, `manipulation_patterns`, `custom_patterns`, `national_phone_patterns`, `detect_secrets.{enabled,plugins}`. |
 | `logging` | INFO / json | `level`, `format` (json only). |
@@ -199,7 +199,7 @@ and exit with status 2. The gateway never starts half-configured.
 | `GET /v1/models` | Bearer | Returns only `auto` and `local`. |
 | other `/v1/*` | Bearer | `auto`/other model → 400 `endpoint_requires_local`; `local` → proxied only if listed in `upstreams.local.passthrough_paths`, else 404. |
 | `GET /healthz` | none | Process up. |
-| `GET /readyz` | none | 200 when config is loaded and Redis is reachable; reports Clef status (not required). |
+| `GET /readyz` | none | 200 when config is loaded and Redis is reachable; reports classifier status (not required). |
 | `GET /metrics` | none / token | **Only on `server.metrics_listen`.** |
 
 Errors use the OpenAI shape `{"error": {"message", "type", "code"}}`. Error codes include:
@@ -219,19 +219,19 @@ Validation errors list field paths only and never echo input values.
 
 | Code | Verdict | Pinned | Meaning |
 |---|---|---|---|
-| `detector:<rule>` | sensitive | yes | A detector fired (Clef skipped). Rules below. |
+| `detector:<rule>` | sensitive | yes | A detector fired (classifier skipped). Rules below. |
 | `unsupported:media:image\|audio\|file` | uncertain | if `sticky_on_uncertain` | Non-text part (not a converted document). |
 | `unsupported:data_url` | uncertain | if `sticky_on_uncertain` | A `data:` URL remained after document conversion. |
 | `unsupported:unknown_part_type` | uncertain | if `sticky_on_uncertain` | Unrecognised content part type. |
 | `unsupported:token_ids` | uncertain | if `sticky_on_uncertain` | Completion prompt given as token ids. |
-| `too_large_for_classifier` | uncertain | **no** | State > `clef.max_state_chars` (never truncated). |
-| `clef_error:<code>` | uncertain | **no** | `timeout`, `transport_error`, `http_<status>`, `invalid_json`, `missing_answers`, `missing_verdict`, `missing_category`, `missing_manipulation`, `unknown_choice`, `invalid_number`, `prob_out_of_range`, `probabilities_not_normalized`, `choice_not_argmax`, `wrong_type`. |
-| `clef_choice:uncertain` | uncertain | if `sticky_on_uncertain` | Clef chose "uncertain". |
-| `clef_choice:<category>` | sensitive | yes | Clef chose a sensitive category. |
-| `clef_low_public_prob` | uncertain | if `sticky_on_uncertain` | p(public) < `public_min_prob`. |
-| `clef_low_confidence` | uncertain | if `sticky_on_uncertain` | confidence < `min_confidence`. |
-| `clef_category:<category>` | sensitive | yes | p(has_category) > `category_max_prob`. |
-| `clef_manipulation` | sensitive | yes | p(manipulation) > `manipulation_max_prob`. |
+| `too_large_for_classifier` | uncertain | **no** | State > `classifier.max_state_chars` (never truncated). |
+| `classifier_error:<code>` | uncertain | **no** | `timeout`, `transport_error`, `http_<status>`, `invalid_json`, `missing_answers`, `missing_verdict`, `missing_category`, `missing_manipulation`, `unknown_choice`, `invalid_number`, `prob_out_of_range`, `probabilities_not_normalized`, `choice_not_argmax`, `wrong_type`. |
+| `classifier_choice:uncertain` | uncertain | if `sticky_on_uncertain` | The classifier chose "uncertain". |
+| `classifier_choice:<category>` | sensitive | yes | The classifier chose a sensitive category. |
+| `classifier_low_public_prob` | uncertain | if `sticky_on_uncertain` | p(public) < `public_min_prob`. |
+| `classifier_low_confidence` | uncertain | if `sticky_on_uncertain` | confidence < `min_confidence`. |
+| `classifier_category:<category>` | sensitive | yes | p(has_category) > `category_max_prob`. |
+| `classifier_manipulation_score` | sensitive | yes | p(manipulation) > `manipulation_max_prob`. |
 | `document_attached:pdf\|text` | sensitive | yes | A converted document (unless `documents.allow_public`). |
 | `session_sticky` | sensitive | (already) | The session was flagged earlier; TTL refreshed. |
 | `session_store_unavailable` | uncertain | no | Redis unreachable (fail closed). |
@@ -260,8 +260,8 @@ the fixed reason set becomes `other`.
 |---|---|---|
 | `privacy_requests_total` | counter | `key_id, endpoint, requested=auto\|local, route=local\|public, verdict=public\|sensitive\|uncertain, stream` |
 | `privacy_route_reasons_total` | counter | `reason` (codes above) |
-| `privacy_clef_calls_total` | counter | `result=ok\|timeout\|transport_error\|http_error\|invalid` |
-| `privacy_clef_skipped_total` | counter | `why=detector\|unsupported\|too_large\|session\|local_model\|document` |
+| `privacy_classifier_calls_total` | counter | `result=ok\|timeout\|transport_error\|http_error\|invalid` |
+| `privacy_classifier_skipped_total` | counter | `why=detector\|unsupported\|too_large\|session\|local_model\|document` |
 | `privacy_session_events_total` | counter | `event=hit\|pinned\|store_unavailable\|write_failed` |
 | `privacy_documents_total` | counter | `type=pdf\|text\|other, result=converted\|rejected` |
 | `privacy_opaque_reasoning_stripped_total` | counter | none: encrypted reasoning items / signatures removed before classification |
@@ -270,19 +270,19 @@ the fixed reason set becomes `other`.
 | `privacy_client_errors_total` | counter | `code` (400/401/404/413 error codes) |
 | `privacy_config_reloads_total` | counter | `result=ok\|failed` |
 | `privacy_classification_seconds` | histogram | whole pipeline |
-| `privacy_clef_seconds` | histogram | Clef call |
+| `privacy_classifier_seconds` | histogram | classifier call |
 | `privacy_upstream_ttfb_seconds` | histogram | `route` |
 | `privacy_request_seconds` | histogram | `route, stream` |
-| `privacy_clef_p_public`, `privacy_clef_confidence`, `privacy_clef_category_max_prob`, `privacy_clef_manipulation_prob` | histogram | buckets 0.05…1.0, for threshold tuning |
-| `privacy_clef_input_tokens` | histogram | from Clef `usage.input_tokens` |
+| `privacy_classifier_p_public`, `privacy_classifier_confidence`, `privacy_classifier_category_max_prob`, `privacy_classifier_manipulation_prob` | histogram | buckets 0.05…1.0, for threshold tuning |
+| `privacy_classifier_input_tokens` | histogram | from the classifier's `usage.input_tokens` |
 | `privacy_inflight_requests` | gauge | `route` |
 | `privacy_config_info` | gauge | `config_sha256` (=1 for the active file) |
 | `privacy_build_info` | gauge | `version` |
-| `privacy_up` | gauge | `dependency=redis\|clef\|local` (probe every 30 s; never probes the public upstream) |
+| `privacy_up` | gauge | `dependency=redis\|classifier\|local` (probe every 30 s; never probes the public upstream) |
 
 The integration invariant is `privacy_egress_total{route="public",result="allowed"}` = the
 number of calls the public provider received. Alert rules are in
-[`prometheus/alerts.yml`](prometheus/alerts.yml): egress blocked, Clef error ratio > 20 %
+[`prometheus/alerts.yml`](prometheus/alerts.yml): egress blocked, classifier error ratio > 20 %
 for 10 min, Redis down, public share dropped to 0, plus local model down and failed reloads.
 
 ## Logs
@@ -292,9 +292,9 @@ JSON lines on stdout. Each request produces exactly one `decision` line with the
 - `key_id`, `endpoint`, `requested`, `route`, `verdict`, `reasons`, `stream`
 - `session`: the last 12 hex characters of the hashed session key
 - `session_source`: `header`, `metadata` or `derived`
-- `clef`: choice, p_public, confidence, per-category probabilities, manipulation, input_tokens
+- `classifier`: choice, p_public, confidence, per-category probabilities, manipulation, input_tokens
 - `documents`, `status`
-- `timings_ms`: detectors, clef, classification, upstream_ttfb, total
+- `timings_ms`: detectors, classifier, classification, upstream_ttfb, total
 
 Other events: `startup`, `config_reload`, `client_error`, `document_rejected` (code
 only), `session_store_write_failed`, `classifier_internal_error`,
@@ -316,7 +316,7 @@ which would print skipped secret values, is silenced.
 - **Rotating API keys**: add the new hash, reload, migrate clients, then remove the old hash and reload again.
 - **Calibrating thresholds**: `privacy-gateway calibrate --config config.yaml --input labelled.jsonl [--output scores.jsonl]`.
     - Input lines are `{"label": "public"|"sensitive", "text": "..."}` or `{"label": ..., "request": {...chat body...}}`, as in [`calibration/examples.jsonl`](calibration/examples.jsonl).
-    - It prints *leaked* (sensitive → public) and *released* (public → public) for the current config and a sweep of each threshold, for Clef alone and for the full pipeline.
+    - It prints *leaked* (sensitive → public) and *released* (public → public) for the current config and a sweep of each threshold, for the classifier alone and for the full pipeline.
     - It exits 1 if the current config leaks. `--output` writes scores only, never text.
     - With Docker Compose, run it in the gateway container (the image has no `privacy-gateway` script; the input file is piped in):
 
@@ -378,7 +378,7 @@ Unit tests (no network) cover:
 
 - detectors: checksums, every rule, obfuscation
 - extraction: every part reaches the state
-- Clef: every invalid response shape
+- Classifier: every invalid response shape
 - `decide()`: the full table plus combinations, 100 % branch coverage
 - the egress stamp: unstamped, forged, tampered and local-stamped bodies are all blocked
 - documents, config (including SIGHUP keeping the old config), sessions, the app, metrics label hygiene, and that no planted secret ever appears in `/metrics`
@@ -401,14 +401,14 @@ Integration (Docker Compose profile `test`):
 tests/integration/run.sh
 ```
 
-- The gateway runs with mock-public (counts calls), mock-local (ok / error500 / hang), mock-clef (all failure and keyword modes), redis-test, and a second gateway with Redis unreachable. Everything sits on an `internal: true` network; the script verifies there is no internet route.
+- The gateway runs with mock-public (counts calls), mock-local (ok / error500 / hang), mock-classifier (all failure and keyword modes), redis-test, and a second gateway with Redis unreachable. Everything sits on an `internal: true` network; the script verifies there is no internet route.
 - Around **every** test, a fixture asserts that `privacy_egress_total{route="public",result="allowed"}` grew by exactly mock-public's call count, and that no planted secret reached mock-public. Every sensitive or uncertain case also asserts mock-public recorded zero calls.
 - After the run, the script greps the gateway logs for every planted value.
 
-Live suite against a real Clef, using the labelled set:
+Live suite against a real classifier server, using the labelled set:
 
 ```bash
-CLEF_LIVE_URL=http://host:8080/v1/systemone CLEF_LIVE_KEY=... pytest -m live tests/live -s
+CLASSIFIER_LIVE_URL=http://host:8080/v1/systemone CLASSIFIER_LIVE_KEY=... pytest -m live tests/live -s
 ```
 
 ## Troubleshooting
@@ -417,10 +417,10 @@ CLEF_LIVE_URL=http://host:8080/v1/systemone CLEF_LIVE_KEY=... pytest -m live tes
 |---|---|
 | Startup exits with status 2 | The printed field path; missing `${ENV}` or secret file; unknown key (typos are rejected). |
 | Everything goes local, reason `session_store_unavailable` | Redis URL and reachability; `/readyz`; `privacy_up{dependency="redis"}`. |
-| Everything goes local, reason `clef_error:*` | The code tells you what: `timeout` → `clef.timeout_s` / model loading; `http_404` → wrong URL; `unknown_choice` → categories in config differ from what the model returns. `privacy_clef_calls_total`. |
-| Everything goes local, `clef_low_public_prob` / `clef_low_confidence` | Thresholds too strict for your model; run `calibrate`; inspect `privacy_clef_p_public` / `privacy_clef_confidence`. |
+| Everything goes local, reason `classifier_error:*` | The code tells you what: `timeout` → `classifier.timeout_s` / model loading; `http_404` → wrong URL; `unknown_choice` → categories in config differ from what the model returns. `privacy_classifier_calls_total`. |
+| Everything goes local, `classifier_low_public_prob` / `classifier_low_confidence` | Thresholds too strict for your model; run `calibrate`; inspect `privacy_classifier_p_public` / `privacy_classifier_confidence`. |
 | Too many `detector:*` hits | Detectors are deliberately aggressive; disable noisy rules per id in `policy.detectors.disabled` (a false positive only costs local inference). |
-| `too_large_for_classifier` | Raise `clef.max_state_chars` (within the Clef model's context) or accept local routing; the state is never truncated. |
+| `too_large_for_classifier` | Raise `classifier.max_state_chars` (within the classifier model's context) or accept local routing; the state is never truncated. |
 | Client gets 502/504 for sensitive requests | The local model is down or slow (`upstreams.local.timeout_s`); `privacy_upstream_errors_total{route="local"}`. There is intentionally no fallback. |
 | `egress_blocked` / `privacy_egress_total{result="blocked"} > 0` | A bug: a body was modified after classification, or a non-local host was configured for the local route. Look for `blocked_external_call` in the logs. |
 | 400 `pdf_no_text_layer` | Scanned PDF without a text layer; there is no OCR. |
@@ -431,8 +431,8 @@ CLEF_LIVE_URL=http://host:8080/v1/systemone CLEF_LIVE_KEY=... pytest -m live tes
 
 - **Thresholds are not calibrated.** The defaults come from the spec. Against a POC Clef-Flash (Q8_0) on the 63 bundled examples, the current config leaked 0 of 32 sensitive examples and released 31 of 31 public ones. That set is small and synthetic; calibrate on labelled samples of your own traffic.
 - Classification is text-only. Images, audio, non-document files and token-id prompts are never sent public (`unsupported:*`). There is no OCR.
-- Detectors are pattern-based and aggressive. They cannot recognise every kind of sensitive content; that is Clef's job. Clef is a probabilistic model, so the thresholds and sticky sessions bias every doubt towards local.
-- Clef needs the whole state in its context window. Larger requests are never truncated; they go local.
+- Detectors are pattern-based and aggressive. They cannot recognise every kind of sensitive content; that is the classifier's job. The classifier is a probabilistic model, so the thresholds and sticky sessions bias every doubt towards local.
+- The classifier needs the whole state in its context window. Larger requests are never truncated; they go local.
 - Session pinning is per `(api key, session id)`. Clients that change their system prompt or first message on every turn, without sending a session id, get a new derived session each turn.
 - Upstream error bodies are not forwarded: they can echo content, and the client gets a generic 502/504.
 - The gateway does not do rate limiting, cost tracking, caching or load balancing.
@@ -446,7 +446,7 @@ add a `signature` to `reasoning.text` items). Clients such as Open WebUI send th
 with every follow-up so the provider can continue its reasoning.
 
 The gateway cannot read these blobs. Classifying them did harm: thousands of characters of
-random base64 lowered Clef's p(public) by about 0.1 (harmless follow-ups fell just under
+random base64 lowered the classifier's p(public) by about 0.1 (harmless follow-ups fell just under
 `public_min_prob`) and occasionally fired a detector (`detector:iban` on about 17% of blobs
 with the old IBAN rule). So the gateway **removes** them from every request, before
 classification and before forwarding. They are removed, not skipped: forwarding them
@@ -462,16 +462,16 @@ public model would fail. See [ISSUE.md](ISSUE.md).
 
 These were chosen while building and can be changed:
 
-1. **`clef.url` must be in `upstreams.local_hosts`.** Classification must not leave the network.
+1. **`classifier.url` must be in `upstreams.local_hosts`.** Classification must not leave the network.
 2. **New config keys:**
     - `upstreams.local.passthrough_paths` (proxied endpoints for model `local`, default none)
     - `server.metrics_auth_token`
     - `policy.detectors.national_phone_patterns` (the `phone_nl` set)
     - `redis.connect_timeout_s` / `redis.timeout_s`
 3. **Extra codes and labels:**
-    - the `clef_error:missing_verdict` code
+    - the `classifier_error:missing_verdict` code
     - the `document_invalid_base64` client error
-    - `why="document"` on `privacy_clef_skipped_total`
+    - `why="document"` on `privacy_classifier_skipped_total`
     - `type="other"` on `privacy_documents_total` (rejected unsupported types)
 4. **Documents with `documents.allow_public: true`** do not add a `document_attached:*` reason (it would block public); they are classified like any other text.
 5. **Attachments are converted for model `local` too**, so the local model never receives binaries.

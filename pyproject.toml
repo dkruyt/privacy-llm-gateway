@@ -40,7 +40,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests/unit"]
 markers = [
-  "live: runs against a real Clef server (needs CLEF_LIVE_URL)",
+  "live: runs against a real classifier server (needs CLASSIFIER_LIVE_URL)",
   "integration: docker compose integration suite",
 ]
 addopts = "-m 'not live and not integration'"

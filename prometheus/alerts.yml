@@ -14,16 +14,16 @@ groups:
           summary: "privacy-gateway egress guard blocked an outbound call on {{ $labels.instance }}"
           description: "privacy_egress_total{result=\"blocked\"} > 0. Check logs for event=blocked_external_call."
 
-      # Clef failing: everything is routed local (safe, but the local model takes all load).
-      - alert: PrivacyGatewayClefErrorRatioHigh
+      # Classifier failing: everything is routed local (safe, but the local model takes all load).
+      - alert: PrivacyGatewayClassifierErrorRatioHigh
         expr: |
-          sum by (instance) (rate(privacy_clef_calls_total{result!="ok"}[5m]))
-            / sum by (instance) (rate(privacy_clef_calls_total[5m])) > 0.20
+          sum by (instance) (rate(privacy_classifier_calls_total{result!="ok"}[5m]))
+            / sum by (instance) (rate(privacy_classifier_calls_total[5m])) > 0.20
         for: 10m
         labels: {severity: warning}
         annotations:
-          summary: "Clef error ratio above 20% for 10 minutes on {{ $labels.instance }}"
-          description: "See privacy_clef_calls_total by result (timeout, transport_error, http_error, invalid)."
+          summary: "Classifier error ratio above 20% for 10 minutes on {{ $labels.instance }}"
+          description: "See privacy_classifier_calls_total by result (timeout, transport_error, http_error, invalid)."
 
       # Redis down: sticky sessions unavailable; every "auto" request goes local.
       - alert: PrivacyGatewayRedisDown
@@ -35,7 +35,7 @@ groups:
           description: "All auto requests are routed local with reason session_store_unavailable."
 
       # Public share dropped to 0 while there is auto traffic and there was public traffic
-      # yesterday: usually Clef is down or returning invalid answers.
+      # yesterday: usually the classifier is down or returning invalid answers.
       - alert: PrivacyGatewayPublicShareDroppedToZero
         expr: |
           sum by (instance) (rate(privacy_requests_total{requested="auto", route="public"}[30m])) == 0
@@ -45,7 +45,7 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: "No auto request went public for 30 minutes on {{ $labels.instance }}"
-          description: "Check privacy_up{dependency=\"clef\"}, privacy_clef_calls_total and privacy_route_reasons_total."
+          description: "Check privacy_up{dependency=\"classifier\"}, privacy_classifier_calls_total and privacy_route_reasons_total."
 
       # Additional (optional) rules.
       - alert: PrivacyGatewayLocalModelDown

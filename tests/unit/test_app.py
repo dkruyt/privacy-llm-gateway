@@ -12,7 +12,7 @@ from privacy_gateway.app import create_app, make_holder
 from tests.conftest import TEST_KEY, TEST_KEY2
 from tests.fakes import FakeRedis
 from tests.pdfs import data_url, docx_bytes, text_pdf
-from tests.unit.test_clef import good_response
+from tests.unit.test_classifier import good_response
 
 AUTH = {"authorization": f"Bearer {TEST_KEY}"}
 AUTH2 = {"authorization": f"Bearer {TEST_KEY2}"}
@@ -25,14 +25,14 @@ class Mocks:
         self.events: list[str] = []
         self.public: list[dict] = []
         self.local: list[dict] = []
-        self.clef: list[dict] = []
-        self.clef_mode = "public"
+        self.classifier: list[dict] = []
+        self.classifier_mode = "public"
         self.local_mode = "ok"
         self.redis = FakeRedis()
 
     def transports(self):
         return {"public": httpx.MockTransport(self._public), "local": httpx.MockTransport(self._local),
-                "clef": httpx.MockTransport(self._clef)}
+                "classifier": httpx.MockTransport(self._classifier)}
 
     def _model_response(self, req, who):
         body = json.loads(req.content)
@@ -58,14 +58,14 @@ class Mocks:
             return httpx.Response(200, json={"data": [{"embedding": [0.1]}]})
         return self._model_response(req, "local")
 
-    def _clef(self, req):
-        self.events.append("clef")
-        self.clef.append(json.loads(req.content))
-        if self.clef_mode == "error500":
+    def _classifier(self, req):
+        self.events.append("classifier")
+        self.classifier.append(json.loads(req.content))
+        if self.classifier_mode == "error500":
             return httpx.Response(500)
-        if self.clef_mode == "malformed":
+        if self.classifier_mode == "malformed":
             return httpx.Response(200, content=b"{not json")
-        return httpx.Response(200, json=good_response(self.policy, choice=self.clef_mode))
+        return httpx.Response(200, json=good_response(self.policy, choice=self.classifier_mode))
 
 
 @pytest.fixture
@@ -134,14 +134,14 @@ async def test_public_route(client, mocks, loaded):
     sent = mocks.public[0]
     assert sent["model"] == loaded.config.upstreams.public.model
     assert sent["messages"] == chat()["messages"] and sent["temperature"] == 0.2
-    assert mocks.events == ["clef", "public"]
+    assert mocks.events == ["classifier", "public"]
 
 
 async def test_detector_routes_local_and_pins(client, mocks, loaded):
     r = await client.post("/v1/chat/completions", json=chat("mail jan@example.com"), headers=AUTH)
     assert r.headers["x-privacy-route"] == "local"
     assert r.headers["x-privacy-reasons"] == "detector:email"
-    assert mocks.public == [] and mocks.clef == []
+    assert mocks.public == [] and mocks.classifier == []
     assert mocks.local[0]["model"] == loaded.config.upstreams.local.model
     assert len(mocks.redis.data) == 1
     # same session (header), clean content → still local
@@ -162,11 +162,11 @@ async def test_detector_routes_local_and_pins(client, mocks, loaded):
 
 async def test_model_local_skips_classification(client, mocks):
     r = await client.post("/v1/chat/completions", json=chat(model="local"), headers=AUTH)
-    assert r.headers["x-privacy-route"] == "local" and mocks.clef == [] and mocks.public == []
+    assert r.headers["x-privacy-route"] == "local" and mocks.classifier == [] and mocks.public == []
 
 
 async def test_public_model_name_is_classified_like_auto(client, mocks, loaded):
-    mocks.clef_mode = "personal_data"
+    mocks.classifier_mode = "personal_data"
     r = await client.post("/v1/chat/completions", json=chat(model="openai/gpt-4o"), headers=AUTH)
     assert r.headers["x-privacy-route"] == "local" and mocks.public == []
     assert mocks.local[0]["model"] == loaded.config.upstreams.local.model
@@ -179,9 +179,9 @@ async def test_routing_fields_rejected(client, mocks, field):
     assert mocks.events == []
 
 
-@pytest.mark.parametrize("mode,reason", [("error500", "clef_error:http_500"), ("malformed", "clef_error:invalid_json")])
-async def test_clef_failure_local_not_pinned(client, mocks, mode, reason):
-    mocks.clef_mode = mode
+@pytest.mark.parametrize("mode,reason", [("error500", "classifier_error:http_500"), ("malformed", "classifier_error:invalid_json")])
+async def test_classifier_failure_local_not_pinned(client, mocks, mode, reason):
+    mocks.classifier_mode = mode
     r = await client.post("/v1/chat/completions", json=chat(), headers=AUTH)
     assert r.headers["x-privacy-route"] == "local" and r.headers["x-privacy-reasons"] == reason
     assert mocks.public == [] and mocks.redis.data == {}
@@ -192,7 +192,7 @@ async def test_redis_down_routes_local(client, mocks):
     r = await client.post("/v1/chat/completions", json=chat(), headers=AUTH)
     assert r.headers["x-privacy-route"] == "local"
     assert r.headers["x-privacy-reasons"] == "session_store_unavailable"
-    assert mocks.public == [] and mocks.clef == []
+    assert mocks.public == [] and mocks.classifier == []
 
 
 async def test_pipeline_exception_routes_local(client, mocks, monkeypatch):
@@ -288,7 +288,7 @@ async def test_pdf_attachment_local_and_pinned(client, mocks):
     r = await client.post("/v1/chat/completions", json=body, headers=AUTH)
     assert r.headers["x-privacy-route"] == "local"
     assert r.headers["x-privacy-reasons"] == "document_attached:pdf"
-    assert mocks.public == [] and mocks.clef == [] and len(mocks.redis.data) == 1
+    assert mocks.public == [] and mocks.classifier == [] and len(mocks.redis.data) == 1
     part = mocks.local[0]["messages"][0]["content"][1]
     assert part["type"] == "text" and part["text"].startswith("[Attached document: c.pdf]")
     assert "base64" not in json.dumps(mocks.local[0])
@@ -311,7 +311,7 @@ async def test_streaming_public_passthrough(client, mocks):
     assert r.headers["content-type"].startswith("text/event-stream")
     assert r.headers["x-privacy-route"] == "public"
     assert r.content == SSE
-    assert mocks.events == ["clef", "public"]  # classified before the upstream connection
+    assert mocks.events == ["classifier", "public"]  # classified before the upstream connection
 
 
 async def test_streaming_sensitive_local(client, mocks):
@@ -364,7 +364,7 @@ async def test_encrypted_reasoning_is_removed_before_classification_and_forwardi
     before = metrics.OPAQUE_REASONING._value.get()
     r = await client.post("/v1/chat/completions", json=replayed([summary, blob]), headers=AUTH)
     assert r.headers["x-privacy-route"] == "public", r.headers["x-privacy-reasons"]
-    assert "NL91" not in json.dumps(mocks.clef) and "NL91" not in json.dumps(mocks.public)
+    assert "NL91" not in json.dumps(mocks.classifier) and "NL91" not in json.dumps(mocks.public)
     assert mocks.public[0]["messages"][1]["reasoning_details"] == [summary]
     assert metrics.OPAQUE_REASONING._value.get() == before + 1
 

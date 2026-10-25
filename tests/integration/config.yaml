@@ -21,11 +21,11 @@ upstreams:
     model: public-test-model
     api_key: "${PUBLIC_KEY}"
     timeout_s: 10
-  local_hosts: [mock-local, mock-clef]
-clef:
-  url: http://mock-clef:8000/v1/systemone
+  local_hosts: [mock-local, mock-classifier]
+classifier:
+  url: http://mock-classifier:8000/v1/systemone
   model: clef-flash
-  api_key: "${CLEF_KEY}"
+  api_key: "${CLASSIFIER_KEY}"
   timeout_s: 2
   max_state_chars: 20000
 redis:

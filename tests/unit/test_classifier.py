@@ -7,7 +7,7 @@ import httpx
 import pytest
 import respx
 
-from privacy_gateway.clef import ClefClient, ClefError, StateTooLarge, build_questions, parse_response
+from privacy_gateway.classifier import ClassifierClient, ClassifierError, StateTooLarge, build_questions, parse_response
 
 
 @pytest.fixture
@@ -16,8 +16,8 @@ def policy(loaded):
 
 
 @pytest.fixture
-def clef_cfg(loaded):
-    return loaded.config.clef
+def classifier_cfg(loaded):
+    return loaded.config.classifier
 
 
 def good_response(policy, choice="public"):
@@ -46,18 +46,18 @@ def test_questions_shape(policy):
     assert q["manipulation"] == {"type": "noul", "instructions": policy.manipulation_instructions}
 
 
-def test_payload_state_contains_notice_and_full_request(clef_cfg, policy):
-    c = ClefClient(clef_cfg, policy)
+def test_payload_state_contains_notice_and_full_request(classifier_cfg, policy):
+    c = ClassifierClient(classifier_cfg, policy)
     body, size = c.payload({"messages": [{"role": "user", "content": "hi"}]})
-    assert body["model"] == clef_cfg.model
+    assert body["model"] == classifier_cfg.model
     assert body["state"] == {"notice": policy.state_notice, "request": {"messages": [{"role": "user", "content": "hi"}]}}
     assert size == len(json.dumps(body["state"], ensure_ascii=False, separators=(",", ":")))
 
 
-def test_too_large_is_never_truncated(clef_cfg, policy):
-    c = ClefClient(clef_cfg, policy)
+def test_too_large_is_never_truncated(classifier_cfg, policy):
+    c = ClassifierClient(classifier_cfg, policy)
     with pytest.raises(StateTooLarge):
-        c.payload({"messages": [{"role": "user", "content": "x" * clef_cfg.max_state_chars}]})
+        c.payload({"messages": [{"role": "user", "content": "x" * classifier_cfg.max_state_chars}]})
 
 
 # ------------------------------------------------------------------ valid parse
@@ -134,13 +134,13 @@ INVALID = {
 @pytest.mark.parametrize("case", list(INVALID))
 def test_invalid_shapes(policy, case):
     fn, code = INVALID[case]
-    with pytest.raises(ClefError) as ei:
+    with pytest.raises(ClassifierError) as ei:
         parse_response(mutate(policy, fn), policy)
     assert ei.value.code == code
 
 
 def test_top_level_not_object(policy):
-    with pytest.raises(ClefError, match="missing_answers"):
+    with pytest.raises(ClassifierError, match="missing_answers"):
         parse_response([1, 2], policy)
 
 
@@ -148,17 +148,17 @@ def test_top_level_not_object(policy):
 
 
 @pytest.fixture
-def client(clef_cfg, policy):
-    return ClefClient(clef_cfg, policy)
+def client(classifier_cfg, policy):
+    return ClassifierClient(classifier_cfg, policy)
 
 
-async def test_classify_ok_sends_auth_and_body(client, clef_cfg, policy):
+async def test_classify_ok_sends_auth_and_body(client, classifier_cfg, policy):
     with respx.mock(assert_all_called=True) as m:
-        route = m.post(clef_cfg.url).respond(200, json=good_response(policy))
+        route = m.post(classifier_cfg.url).respond(200, json=good_response(policy))
         r = await client.classify({"messages": [{"role": "user", "content": "hello"}]})
     assert r.choice == "public"
     req = route.calls.last.request
-    assert req.headers["authorization"] == "Bearer clef-secret-value"
+    assert req.headers["authorization"] == "Bearer classifier-secret-value"
     sent = json.loads(req.content)
     assert sent["state"]["request"]["messages"][0]["content"] == "hello"
     assert set(sent["questions"]) == set(build_questions(policy))
@@ -173,51 +173,51 @@ async def test_classify_ok_sends_auth_and_body(client, clef_cfg, policy):
         (httpx.RemoteProtocolError("bad"), "transport_error"),
     ],
 )
-async def test_transport_errors(client, clef_cfg, side_effect, code):
+async def test_transport_errors(client, classifier_cfg, side_effect, code):
     with respx.mock() as m:
-        m.post(clef_cfg.url).mock(side_effect=side_effect)
-        with pytest.raises(ClefError) as ei:
+        m.post(classifier_cfg.url).mock(side_effect=side_effect)
+        with pytest.raises(ClassifierError) as ei:
             await client.classify({"messages": []})
     assert ei.value.code == code
     assert ei.value.metric_result == code
 
 
 @pytest.mark.parametrize("status", [400, 404, 500, 503])
-async def test_http_status(client, clef_cfg, status):
+async def test_http_status(client, classifier_cfg, status):
     with respx.mock() as m:
-        m.post(clef_cfg.url).respond(status, json={"error": "x"})
-        with pytest.raises(ClefError) as ei:
+        m.post(classifier_cfg.url).respond(status, json={"error": "x"})
+        with pytest.raises(ClassifierError) as ei:
             await client.classify({})
     assert ei.value.code == f"http_{status}" and ei.value.metric_result == "http_error"
 
 
-async def test_invalid_json(client, clef_cfg):
+async def test_invalid_json(client, classifier_cfg):
     with respx.mock() as m:
-        m.post(clef_cfg.url).respond(200, content=b"<html>oops")
-        with pytest.raises(ClefError) as ei:
+        m.post(classifier_cfg.url).respond(200, content=b"<html>oops")
+        with pytest.raises(ClassifierError) as ei:
             await client.classify({})
     assert ei.value.code == "invalid_json" and ei.value.metric_result == "invalid"
 
 
-async def test_redirect_not_followed(client, clef_cfg):
+async def test_redirect_not_followed(client, classifier_cfg):
     with respx.mock() as m:
-        m.post(clef_cfg.url).respond(302, headers={"location": "https://evil.example/"})
-        with pytest.raises(ClefError, match="http_302"):
+        m.post(classifier_cfg.url).respond(302, headers={"location": "https://evil.example/"})
+        with pytest.raises(ClassifierError, match="http_302"):
             await client.classify({})
 
 
-def test_client_ignores_env_proxies(clef_cfg, policy, monkeypatch):
+def test_client_ignores_env_proxies(classifier_cfg, policy, monkeypatch):
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
     monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:3128")
-    c = ClefClient(clef_cfg, policy)
+    c = ClassifierClient(classifier_cfg, policy)
     assert c._client._trust_env is False
 
 
-async def test_error_message_has_no_content(client, clef_cfg, policy):
+async def test_error_message_has_no_content(client, classifier_cfg, policy):
     d = good_response(policy)
     d["answers"]["verdict"]["choice"] = "SECRET-CONTENT-MARK"
     with respx.mock() as m:
-        m.post(clef_cfg.url).respond(200, json=d)
-        with pytest.raises(ClefError) as ei:
+        m.post(classifier_cfg.url).respond(200, json=d)
+        with pytest.raises(ClassifierError) as ei:
             await client.classify({"messages": [{"role": "user", "content": "SECRET-CONTENT-MARK"}]})
     assert "SECRET" not in str(ei.value) and "SECRET" not in repr(ei.value)

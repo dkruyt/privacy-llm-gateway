@@ -1,6 +1,6 @@
 """Routing decision: a pure function with no I/O.
 
-Public is the exception: it requires a valid Clef result and zero reasons.
+Public is the exception: it requires a valid classifier result and zero reasons.
 Everything else (including anything unexpected) routes local.
 """
 
@@ -16,7 +16,7 @@ Verdict = Literal["public", "sensitive", "uncertain"]
 
 
 @dataclass(frozen=True)
-class ClefResult:
+class ClassifierResult:
     choice: str
     probabilities: dict[str, float]
     confidence: float
@@ -45,8 +45,8 @@ def decide(
     documents: list[str] = (),  # type: ignore[assignment]  # "pdf"/"text" per converted doc
     documents_allow_public: bool = False,
     too_large: bool = False,
-    clef_result: ClefResult | None = None,
-    clef_error: str | None = None,
+    classifier_result: ClassifierResult | None = None,
+    classifier_error: str | None = None,
     thresholds: Thresholds,
     sticky_on_uncertain: bool,
 ) -> Decision:
@@ -75,39 +75,39 @@ def decide(
         add("too_large_for_classifier")
         uncertain = True
 
-    if clef_error is not None:
-        add(f"clef_error:{clef_error}")
+    if classifier_error is not None:
+        add(f"classifier_error:{classifier_error}")
         uncertain = True
 
-    if clef_result is not None:
-        r, t = clef_result, thresholds
+    if classifier_result is not None:
+        r, t = classifier_result, thresholds
         if r.choice == UNCERTAIN:
-            add("clef_choice:uncertain")
+            add("classifier_choice:uncertain")
             uncertain = True
             sticky = sticky or sticky_on_uncertain
         elif r.choice != PUBLIC:
-            add(f"clef_choice:{r.choice}")
+            add(f"classifier_choice:{r.choice}")
             sensitive = sticky = True
         if r.probabilities.get(PUBLIC, 0.0) < t.public_min_prob:
-            add("clef_low_public_prob")
+            add("classifier_low_public_prob")
             uncertain = True
             sticky = sticky or sticky_on_uncertain
         if r.confidence < t.min_confidence:
-            add("clef_low_confidence")
+            add("classifier_low_confidence")
             uncertain = True
             sticky = sticky or sticky_on_uncertain
         for category, p in r.category_probs.items():
             if p > t.category_max_prob:
-                add(f"clef_category:{category}")
+                add(f"classifier_category:{category}")
                 sensitive = sticky = True
         if r.manipulation > t.manipulation_max_prob:
-            add("clef_manipulation")
+            add("classifier_manipulation_score")
             sensitive = sticky = True
     elif not reasons:
         add("not_classified")  # defensive: should never happen
         uncertain = True
 
-    if not reasons and clef_result is not None and clef_error is None:
+    if not reasons and classifier_result is not None and classifier_error is None:
         return Decision("public", "public", [], False)
     verdict: Verdict = "sensitive" if sensitive else "uncertain"
     return Decision("local", verdict, reasons, sticky)

@@ -109,13 +109,13 @@ stat("Sensitive (range)", f'sum(increase(privacy_requests_total{{{KEY},verdict="
      thresholds=[{"color": "purple", "value": None}], decimals=0)
 stat("Egress blocked", 'sum(privacy_egress_total{result="blocked"})', 9, 3, y, thresholds=RED_IF_POSITIVE,
      desc="Outbound calls refused by the egress guard. Must stay 0 — anything else is a bug.", decimals=0)
-stat("Clef error ratio",
-     'sum(rate(privacy_clef_calls_total{result!="ok"}[$__rate_interval])) / sum(rate(privacy_clef_calls_total[$__rate_interval]))',
+stat("Classifier error ratio",
+     'sum(rate(privacy_classifier_calls_total{result!="ok"}[$__rate_interval])) / sum(rate(privacy_classifier_calls_total[$__rate_interval]))',
      12, 3, y, "percentunit", [{"color": "green", "value": None}, {"color": "orange", "value": 0.05}, {"color": "red", "value": 0.2}], decimals=1,
-     desc="Share of Clef calls that failed (timeout, transport, HTTP, invalid answer). Empty when there were no calls.")
+     desc="Share of classifier calls that failed (timeout, transport, HTTP, invalid answer). Empty when there were no calls.")
 stat("Redis", 'max(privacy_up{dependency="redis"})', 15, 2, y, mappings=UPDOWN,
      thresholds=[{"color": "red", "value": None}, {"color": "green", "value": 1}])
-stat("Clef", 'max(privacy_up{dependency="clef"})', 17, 2, y, mappings=UPDOWN,
+stat("Classifier", 'max(privacy_up{dependency="classifier"})', 17, 2, y, mappings=UPDOWN,
      thresholds=[{"color": "red", "value": None}, {"color": "green", "value": 1}])
 stat("Local model", 'max(privacy_up{dependency="local"})', 19, 2, y, mappings=UPDOWN,
      thresholds=[{"color": "red", "value": None}, {"color": "green", "value": 1}])
@@ -139,39 +139,39 @@ ts("Requests by client key", [target(f'sum by (key_id, requested) (rate(privacy_
 _y = y + 8
 y = _y
 table("Top routing reasons (range)", "topk(20, sum by (reason) (increase(privacy_route_reasons_total[$__range])) > 0)", 0, 12, y,
-      "Why requests were routed local. Codes: detector:*, clef_choice:*, clef_category:*, clef_error:*, unsupported:*, session_*, document_attached:* …", h=9)
+      "Why requests were routed local. Codes: detector:*, classifier_choice:*, classifier_category:*, classifier_error:*, unsupported:*, session_*, document_attached:* …", h=9)
 ts("Routing reasons over time", [target("sum by (reason) (rate(privacy_route_reasons_total[$__rate_interval])) > 0", "{{reason}}")],
    12, 12, y, "reqps", stack=True, h=9)
 _y = y + 9
 
-# ---------------------------------------------------------------- clef
-row("Classifier (Clef)")
+# ---------------------------------------------------------------- classifier
+row("Classifier")
 y = _y
-ts("Clef calls by result", [target("sum by (result) (rate(privacy_clef_calls_total[$__rate_interval]))", "{{result}}")],
+ts("Classifier calls by result", [target("sum by (result) (rate(privacy_classifier_calls_total[$__rate_interval]))", "{{result}}")],
    0, 8, y, "reqps", stack=True)
-ts("Clef skipped (why)", [target("sum by (why) (rate(privacy_clef_skipped_total[$__rate_interval]))", "{{why}}")],
+ts("Classifier skipped (why)", [target("sum by (why) (rate(privacy_classifier_skipped_total[$__rate_interval]))", "{{why}}")],
    8, 8, y, "reqps", stack=True)
-ts("Latency: Clef call & whole classification", [
-    target("histogram_quantile(0.5, sum by (le) (rate(privacy_clef_seconds_bucket[$__rate_interval])))", "Clef p50", "A"),
-    target("histogram_quantile(0.95, sum by (le) (rate(privacy_clef_seconds_bucket[$__rate_interval])))", "Clef p95", "B"),
+ts("Latency: classifier call & whole classification", [
+    target("histogram_quantile(0.5, sum by (le) (rate(privacy_classifier_seconds_bucket[$__rate_interval])))", "classifier p50", "A"),
+    target("histogram_quantile(0.95, sum by (le) (rate(privacy_classifier_seconds_bucket[$__rate_interval])))", "classifier p95", "B"),
     target("histogram_quantile(0.95, sum by (le) (rate(privacy_classification_seconds_bucket[$__rate_interval])))", "pipeline p95", "C"),
 ], 16, 8, y, "s")
 _y = y + 8
 y = _y
-hist("p(public) distribution (range)", "privacy_clef_p_public", 0, 6, y,
+hist("p(public) distribution (range)", "privacy_classifier_p_public", 0, 6, y,
      "Bucketed p(verdict=public). Threshold policy.thresholds.public_min_prob (default 0.80): below it → local.")
-hist("Confidence distribution (range)", "privacy_clef_confidence", 6, 6, y,
+hist("Confidence distribution (range)", "privacy_classifier_confidence", 6, 6, y,
      "Bucketed verdict confidence. Threshold min_confidence (default 0.60).")
-hist("Max category probability (range)", "privacy_clef_category_max_prob", 12, 6, y,
+hist("Max category probability (range)", "privacy_classifier_category_max_prob", 12, 6, y,
      "Highest has_<category> probability per call. Threshold category_max_prob (default 0.30): above it → local.")
-hist("Manipulation probability (range)", "privacy_clef_manipulation_prob", 18, 6, y,
+hist("Manipulation probability (range)", "privacy_classifier_manipulation_prob", 18, 6, y,
      "Threshold manipulation_max_prob (default 0.30): above it → local.")
 _y = y + 8
 y = _y
-ts("Clef input tokens", [
-    target("histogram_quantile(0.5, sum by (le) (rate(privacy_clef_input_tokens_bucket[$__rate_interval])))", "p50", "A"),
-    target("histogram_quantile(0.95, sum by (le) (rate(privacy_clef_input_tokens_bucket[$__rate_interval])))", "p95", "B"),
-], 0, 12, y, "short", desc="Large states approach clef.max_state_chars → too_large_for_classifier (routed local).")
+ts("Classifier input tokens", [
+    target("histogram_quantile(0.5, sum by (le) (rate(privacy_classifier_input_tokens_bucket[$__rate_interval])))", "p50", "A"),
+    target("histogram_quantile(0.95, sum by (le) (rate(privacy_classifier_input_tokens_bucket[$__rate_interval])))", "p95", "B"),
+], 0, 12, y, "short", desc="Large states approach classifier.max_state_chars → too_large_for_classifier (routed local).")
 ts("Sessions", [target("sum by (event) (rate(privacy_session_events_total[$__rate_interval]))", "{{event}}")],
    12, 12, y, "reqps", stack=True, desc="hit = request routed local by a sticky session; pinned = session flagged sensitive.")
 _y = y + 8

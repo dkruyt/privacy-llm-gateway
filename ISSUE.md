@@ -89,7 +89,7 @@ earlier assistant answers, the system prompt and tool content.
 **Rejected as-is: "only check user messages".** Everything not checked is still forwarded, so
 a sensitive local answer (or RAG content in the system prompt, or tool results) would reach the
 public provider on a harmless follow-up. The sticky pin does not close this, because many local
-routes do not pin: uncertain results when `sticky_on_uncertain: false`, Clef errors, model
+routes do not pin: uncertain results when `sticky_on_uncertain: false`, classifier errors, model
 `local`, and pins expire after the TTL or vanish when Redis restarts (no persistence). API
 clients can also write their own "assistant" messages.
 

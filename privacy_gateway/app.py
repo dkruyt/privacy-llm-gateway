@@ -20,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import logs, metrics
 from .auth import KeyMap
-from .clef import ERROR_CODES, ClefClient
+from .classifier import ERROR_CODES, ClassifierClient
 from .config import ConfigHolder, LoadedConfig
 from .decision import Decision, forced_local
 from .detectors import Detectors
@@ -54,7 +54,7 @@ class Runtime:
     loaded: LoadedConfig
     keys: KeyMap
     detectors: Detectors
-    clef: ClefClient
+    classifier: ClassifierClient
     upstreams: Upstreams
     sessions: SessionStore
     known_reasons: set[str] = field(default_factory=set)
@@ -64,7 +64,7 @@ class Runtime:
         return self.loaded.config
 
     async def aclose(self) -> None:
-        await self.clef.aclose()
+        await self.classifier.aclose()
         await self.upstreams.aclose()
         await self.sessions.aclose()
 
@@ -75,7 +75,7 @@ class Runtime:
         except RuntimeError:
             return
         ups = self.config.upstreams
-        delay = max(ups.local.timeout_s, ups.public.timeout_s, self.config.clef.timeout_s) + 10
+        delay = max(ups.local.timeout_s, ups.public.timeout_s, self.config.classifier.timeout_s) + 10
         loop.call_later(delay, lambda: asyncio.ensure_future(self.aclose()))
 
 
@@ -84,14 +84,14 @@ def build_runtime(loaded: LoadedConfig, transports: dict | None = None, redis_cl
     transports = transports or {}
     detectors = Detectors(cfg.policy.detectors)
     known = {f"detector:{r}" for r in detectors.rule_ids}
-    known |= {f"clef_choice:{c}" for c in cfg.policy.categories}
-    known |= {f"clef_category:{c}" for c in cfg.policy.sensitive_categories}
-    known |= {f"clef_error:{c}" for c in ERROR_CODES}
+    known |= {f"classifier_choice:{c}" for c in cfg.policy.categories}
+    known |= {f"classifier_category:{c}" for c in cfg.policy.sensitive_categories}
+    known |= {f"classifier_error:{c}" for c in ERROR_CODES}
     return Runtime(
         loaded=loaded,
         keys=KeyMap(cfg.auth),
         detectors=detectors,
-        clef=ClefClient(cfg.clef, cfg.policy, transport=transports.get("clef")),
+        classifier=ClassifierClient(cfg.classifier, cfg.policy, transport=transports.get("classifier")),
         upstreams=Upstreams(cfg.upstreams, loaded.stamp_key or _PROCESS_STAMP_KEY, transports),
         sessions=SessionStore(cfg.redis, cfg.policy.session.ttl_seconds, client=redis_client),
         known_reasons=known,
@@ -170,17 +170,17 @@ def _outbound(body: dict[str, Any], model: str) -> dict[str, Any]:
 
 
 def create_app(holder: ConfigHolder, *, start_background: bool = True, install_sighup: bool = False) -> FastAPI:
-    state: dict[str, Any] = {"clef_up": None}
+    state: dict[str, Any] = {"classifier_up": None}
 
     async def probe_once() -> None:
         rt: Runtime = holder.current
-        redis_ok, clef_ok, local_ok = await asyncio.gather(
-            rt.sessions.ping(), rt.clef.probe(), rt.upstreams.probe_local()
+        redis_ok, classifier_ok, local_ok = await asyncio.gather(
+            rt.sessions.ping(), rt.classifier.probe(), rt.upstreams.probe_local()
         )
         metrics.set_up("redis", redis_ok)
-        metrics.set_up("clef", clef_ok)
+        metrics.set_up("classifier", classifier_ok)
         metrics.set_up("local", local_ok)
-        state["clef_up"] = clef_ok
+        state["classifier_up"] = classifier_ok
 
     async def probe_loop() -> None:
         while True:
@@ -253,7 +253,7 @@ def create_app(holder: ConfigHolder, *, start_background: bool = True, install_s
             "status": "ready" if redis_ok else "not_ready",
             "config_sha256": holder.loaded.sha256,
             "redis": "up" if redis_ok else "down",
-            "clef": {None: "unknown", True: "up", False: "down"}[state["clef_up"]],
+            "classifier": {None: "unknown", True: "up", False: "down"}[state["classifier_up"]],
         }
         return JSONResponse(body, status_code=200 if redis_ok else 503)
 
@@ -356,7 +356,7 @@ def create_app(holder: ConfigHolder, *, start_background: bool = True, install_s
         sess_source: str | None = None
 
         if requested == "local":
-            metrics.clef_skipped("local_model")
+            metrics.classifier_skipped("local_model")
             decision = Decision("local", "uncertain", [], False)
         else:
             seed, sess_source = session_seed(body, request.headers, cfg.policy.session.header)
@@ -366,13 +366,13 @@ def create_app(holder: ConfigHolder, *, start_background: bool = True, install_s
             try:
                 if await rt.sessions.is_sensitive(skey):
                     metrics.session_event("hit")
-                    metrics.clef_skipped("session")
+                    metrics.classifier_skipped("session")
                     decision = forced_local("session_sticky", "sensitive", sticky=False)
             except (SessionStoreUnavailable, Exception) as exc:  # noqa: BLE001 - fail closed
                 if not isinstance(exc, SessionStoreUnavailable):
                     log.error("session_store_error", exc)
                 metrics.session_event("store_unavailable")
-                metrics.clef_skipped("session")
+                metrics.classifier_skipped("session")
                 decision = forced_local("session_store_unavailable")
             if decision is None:
                 try:
@@ -381,7 +381,7 @@ def create_app(holder: ConfigHolder, *, start_background: bool = True, install_s
                         headers=request.headers,
                         policy=cfg.policy,
                         detectors=rt.detectors,
-                        clef=rt.clef,
+                        classifier=rt.classifier,
                         documents=list(conv.documents),
                     )
                     decision = ev.decision
@@ -414,7 +414,7 @@ def create_app(holder: ConfigHolder, *, start_background: bool = True, install_s
                 key_id=key_id, endpoint=endpoint, requested=requested, route=route,
                 verdict=decision.verdict, reasons=decision.reasons, stream=stream,
                 session=sess_short, session_source=sess_source,
-                clef=ev.clef_scores() if ev else None, timings_ms=timings, status=status,
+                classifier=ev.classifier_scores() if ev else None, timings_ms=timings, status=status,
                 documents=list(conv.documents),
             )
 

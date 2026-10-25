@@ -42,14 +42,14 @@ ENDPOINTS = ("chat_completions", "completions", "models", "passthrough", "other"
 REQUESTED = ("auto", "local")
 ROUTES = ("local", "public")
 VERDICTS = ("public", "sensitive", "uncertain")
-CLEF_RESULTS = ("ok", "timeout", "transport_error", "http_error", "invalid")
+CLASSIFIER_RESULTS = ("ok", "timeout", "transport_error", "http_error", "invalid")
 SKIP_WHY = ("detector", "unsupported", "too_large", "session", "local_model", "document")
 SESSION_EVENTS = ("hit", "pinned", "store_unavailable", "write_failed")
 DOC_TYPES = ("pdf", "text", "other")
 DOC_RESULTS = ("converted", "rejected")
 EGRESS_RESULTS = ("allowed", "blocked")
 UPSTREAM_KINDS = ("http_4xx", "http_5xx", "timeout", "transport")
-DEPENDENCIES = ("redis", "clef", "local")
+DEPENDENCIES = ("redis", "classifier", "local")
 
 
 def _c(name, doc, labels=()):
@@ -70,8 +70,8 @@ REQUESTS = _c(
     ("key_id", "endpoint", "requested", "route", "verdict", "stream"),
 )
 ROUTE_REASONS = _c("privacy_route_reasons_total", "Routing reasons (fixed code set).", ("reason",))
-CLEF_CALLS = _c("privacy_clef_calls_total", "Clef calls by result.", ("result",))
-CLEF_SKIPPED = _c("privacy_clef_skipped_total", "Requests not sent to Clef, by cause.", ("why",))
+CLASSIFIER_CALLS = _c("privacy_classifier_calls_total", "Classifier calls by result.", ("result",))
+CLASSIFIER_SKIPPED = _c("privacy_classifier_skipped_total", "Requests not sent to the classifier, by cause.", ("why",))
 SESSION_EVENTS_TOTAL = _c("privacy_session_events_total", "Sticky-session events.", ("event",))
 DOCUMENTS = _c("privacy_documents_total", "Attached documents by type and result.", ("type", "result"))
 OPAQUE_REASONING = _c(
@@ -90,14 +90,14 @@ CONFIG_RELOADS = _c("privacy_config_reloads_total", "SIGHUP config reloads.", ("
 CLASSIFICATION_SECONDS = _h(
     "privacy_classification_seconds", "Whole classification pipeline duration.", _LAT
 )
-CLEF_SECONDS = _h("privacy_clef_seconds", "Clef call duration.", _LAT)
+CLASSIFIER_SECONDS = _h("privacy_classifier_seconds", "Classifier call duration.", _LAT)
 UPSTREAM_TTFB = _h("privacy_upstream_ttfb_seconds", "Time to upstream response headers.", _LONG, ("route",))
 REQUEST_SECONDS = _h("privacy_request_seconds", "Total request duration.", _LONG, ("route", "stream"))
-CLEF_P_PUBLIC = _h("privacy_clef_p_public", "Clef p(verdict=public).", _PROB)
-CLEF_CONFIDENCE = _h("privacy_clef_confidence", "Clef verdict confidence.", _PROB)
-CLEF_CATEGORY_MAX = _h("privacy_clef_category_max_prob", "Highest has_<category> probability.", _PROB)
-CLEF_MANIPULATION = _h("privacy_clef_manipulation_prob", "Clef manipulation probability.", _PROB)
-CLEF_INPUT_TOKENS = _h("privacy_clef_input_tokens", "Clef input tokens per call.", _TOKENS)
+CLASSIFIER_P_PUBLIC = _h("privacy_classifier_p_public", "Classifier p(verdict=public).", _PROB)
+CLASSIFIER_CONFIDENCE = _h("privacy_classifier_confidence", "Classifier verdict confidence.", _PROB)
+CLASSIFIER_CATEGORY_MAX = _h("privacy_classifier_category_max_prob", "Highest has_<category> probability.", _PROB)
+CLASSIFIER_MANIPULATION = _h("privacy_classifier_manipulation_prob", "Classifier manipulation probability.", _PROB)
+CLASSIFIER_INPUT_TOKENS = _h("privacy_classifier_input_tokens", "Classifier input tokens per call.", _TOKENS)
 
 INFLIGHT = _g("privacy_inflight_requests", "Requests in flight per route.", ("route",), "livesum")
 CONFIG_INFO = _g("privacy_config_info", "Active config (sha256 of the file) = 1.", ("config_sha256",), "livemostrecent")
@@ -111,10 +111,10 @@ BUILD_INFO.labels(version=__version__).set(1)
 _REASON_PREFIXES = re.compile(
     r"^(?:detector:(?:[a-z_]+|custom:[a-z0-9_]+|detect_secrets:[A-Za-z0-9]+)"
     r"|unsupported:(?:media:(?:image|audio|file)|data_url|unknown_part_type|token_ids)"
-    r"|clef_error:[a-z0-9_]+"
-    r"|clef_choice:[a-z0-9_]+|clef_category:[a-z0-9_]+"
+    r"|classifier_error:[a-z0-9_]+"
+    r"|classifier_choice:[a-z0-9_]+|classifier_category:[a-z0-9_]+"
     r"|document_attached:(?:pdf|text)"
-    r"|too_large_for_classifier|clef_low_public_prob|clef_low_confidence|clef_manipulation"
+    r"|too_large_for_classifier|classifier_low_public_prob|classifier_low_confidence|classifier_manipulation_score"
     r"|session_sticky|session_store_unavailable|classifier_internal_error|not_classified)$"
 )
 
@@ -125,9 +125,9 @@ def _check(value: str, allowed: Iterable[str]) -> str:
 
 def safe_reason(reason: str, known: set[str] | None = None) -> str:
     """Only reason codes from the fixed set become labels; anything else → "other"."""
-    if known is not None and reason not in known and not reason.startswith("clef_error:http_"):
+    if known is not None and reason not in known and not reason.startswith("classifier_error:http_"):
         # detector/category reasons must name a configured rule or category
-        if reason.split(":", 1)[0] in ("detector", "clef_choice", "clef_category"):
+        if reason.split(":", 1)[0] in ("detector", "classifier_choice", "classifier_category"):
             return "other"
     return reason if _REASON_PREFIXES.match(reason) else "other"
 
@@ -150,8 +150,8 @@ def client_error(code: str) -> None:
     CLIENT_ERRORS.labels(code=code if re.fullmatch(r"[a-z0-9_]{1,40}", code) else "other").inc()
 
 
-def clef_skipped(why: str) -> None:
-    CLEF_SKIPPED.labels(why=_check(why, SKIP_WHY)).inc()
+def classifier_skipped(why: str) -> None:
+    CLASSIFIER_SKIPPED.labels(why=_check(why, SKIP_WHY)).inc()
 
 
 def session_event(event: str) -> None:
@@ -200,8 +200,8 @@ def set_up(dependency: str, up: bool) -> None:
 
 FIXED_REASONS = (
     "unsupported:media:image", "unsupported:media:audio", "unsupported:media:file", "unsupported:data_url",
-    "unsupported:unknown_part_type", "unsupported:token_ids", "too_large_for_classifier", "clef_low_public_prob",
-    "clef_low_confidence", "clef_manipulation", "session_sticky", "session_store_unavailable",
+    "unsupported:unknown_part_type", "unsupported:token_ids", "too_large_for_classifier", "classifier_low_public_prob",
+    "classifier_low_confidence", "classifier_manipulation_score", "session_sticky", "session_store_unavailable",
     "classifier_internal_error", "document_attached:pdf", "document_attached:text",
 )
 CLIENT_ERROR_CODES = (
@@ -227,12 +227,12 @@ def init_label_sets(key_ids: Iterable[str] = (), known_reasons: Iterable[str] = 
         for stream in ("true", "false"):
             REQUEST_SECONDS.labels(route=route, stream=stream)
         UPSTREAM_TTFB.labels(route=route)
-    for r in CLEF_RESULTS:
-        CLEF_CALLS.labels(result=r)
+    for r in CLASSIFIER_RESULTS:
+        CLASSIFIER_CALLS.labels(result=r)
     for res in ("ok", "failed"):
         CONFIG_RELOADS.labels(result=res)
     for why in SKIP_WHY:
-        CLEF_SKIPPED.labels(why=why)
+        CLASSIFIER_SKIPPED.labels(why=why)
     for ev in SESSION_EVENTS:
         SESSION_EVENTS_TOTAL.labels(event=ev)
     for t in DOC_TYPES:

@@ -6,7 +6,7 @@ import json
 import respx
 
 from privacy_gateway.calibrate import _load, report, run, score_all
-from tests.unit.test_clef import good_response
+from tests.unit.test_classifier import good_response
 
 
 def write_rows(tmp_path, rows):
@@ -26,7 +26,7 @@ ROWS = [
 async def test_score_and_report_leak(loaded, tmp_path):
     rows = _load(str(write_rows(tmp_path, ROWS)))
     with respx.mock() as m:
-        m.post(loaded.config.clef.url).respond(200, json=good_response(loaded.config.policy))  # Clef says public
+        m.post(loaded.config.classifier.url).respond(200, json=good_response(loaded.config.policy))  # classifier says public
         scored = await score_all(loaded, rows, 2)
     assert {s.id: s.detector_hits for s in scored}["s2"] == ["email"]
     out = io.StringIO()
@@ -39,7 +39,7 @@ async def test_score_and_report_leak(loaded, tmp_path):
 async def test_report_no_leak(loaded, tmp_path):
     rows = _load(str(write_rows(tmp_path, ROWS[:1] + ROWS[2:3])))
     with respx.mock() as m:
-        m.post(loaded.config.clef.url).respond(200, json=good_response(loaded.config.policy))
+        m.post(loaded.config.classifier.url).respond(200, json=good_response(loaded.config.policy))
         scored = await score_all(loaded, rows, 1)
     assert report(scored, loaded, io.StringIO()) == 0
 
