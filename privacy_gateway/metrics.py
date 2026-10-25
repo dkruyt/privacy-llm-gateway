@@ -74,6 +74,10 @@ CLEF_CALLS = _c("privacy_clef_calls_total", "Clef calls by result.", ("result",)
 CLEF_SKIPPED = _c("privacy_clef_skipped_total", "Requests not sent to Clef, by cause.", ("why",))
 SESSION_EVENTS_TOTAL = _c("privacy_session_events_total", "Sticky-session events.", ("event",))
 DOCUMENTS = _c("privacy_documents_total", "Attached documents by type and result.", ("type", "result"))
+OPAQUE_REASONING = _c(
+    "privacy_opaque_reasoning_stripped_total",
+    "Encrypted reasoning items/signatures removed from requests before classification.",
+)
 EGRESS = _c(
     "privacy_egress_total",
     "Outbound model calls by route and egress-guard result. result=blocked must stay 0.",
@@ -156,6 +160,10 @@ def session_event(event: str) -> None:
 
 def document(doc_type: str, result: str) -> None:
     DOCUMENTS.labels(type=_check(doc_type, DOC_TYPES), result=_check(result, DOC_RESULTS)).inc()
+
+
+def opaque_reasoning_stripped(n: int) -> None:
+    OPAQUE_REASONING.inc(n)
 
 
 def egress(route: str, result: str) -> None:

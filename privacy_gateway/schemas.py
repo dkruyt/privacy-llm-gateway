@@ -15,6 +15,13 @@ ROUTING_FIELDS = frozenset(
 # communicates through headers only. Kept as the single place to extend.
 GATEWAY_ONLY_FIELDS: frozenset[str] = frozenset()
 
+# Opaque provider reasoning that clients replay on follow-up turns (OpenRouter
+# `reasoning_details`): encrypted blobs and signatures. The gateway cannot read them, and
+# random base64 skews the classifier and trips detectors, so it removes them before
+# classification. Removed, not skipped: nothing reaches an upstream unclassified.
+OPAQUE_REASONING_TYPES = frozenset({"reasoning.encrypted"})
+OPAQUE_REASONING_KEYS = frozenset({"signature"})
+
 MODEL_AUTO = "auto"
 MODEL_LOCAL = "local"
 
@@ -53,3 +60,33 @@ class CompletionRequest(_Request):
 
 def error_body(message: str, type_: str, code: str) -> dict[str, Any]:
     return {"error": {"message": message, "type": type_, "code": code}}
+
+
+def strip_opaque_reasoning(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Return (body without opaque reasoning, number of removed items/fields). The input is not modified."""
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return body, 0
+    removed = 0
+    out_messages = []
+    for msg in messages:
+        details = msg.get("reasoning_details") if isinstance(msg, dict) else None
+        if not isinstance(details, list):
+            out_messages.append(msg)
+            continue
+        kept = []
+        for item in details:
+            if isinstance(item, dict) and item.get("type") in OPAQUE_REASONING_TYPES:
+                removed += 1
+                continue
+            if isinstance(item, dict) and OPAQUE_REASONING_KEYS & item.keys():
+                removed += len(OPAQUE_REASONING_KEYS & item.keys())
+                item = {k: v for k, v in item.items() if k not in OPAQUE_REASONING_KEYS}
+            kept.append(item)
+        msg = {k: v for k, v in msg.items() if k != "reasoning_details"}
+        if kept:
+            msg["reasoning_details"] = kept
+        out_messages.append(msg)
+    if not removed:
+        return body, 0
+    return {**body, "messages": out_messages}, removed

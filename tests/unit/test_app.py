@@ -344,3 +344,33 @@ async def test_logs_are_content_free(client, mocks, caplog):
     lines = [json.loads(line) for line in out.splitlines()]
     d = [x for x in lines if x.get("event") == "decision"]
     assert len(d) == 2 and d[0]["route"] == "local" and len(d[0]["session"]) == 12
+
+
+# ------------------------------------------------------------------ opaque reasoning
+
+
+def replayed(details):
+    return {"model": "auto", "messages": [
+        {"role": "user", "content": "Tell me a fun fact"},
+        {"role": "assistant", "content": "Vespasian taxed urine.", "reasoning_details": details},
+        {"role": "user", "content": "Another one"},
+    ]}
+
+
+async def test_encrypted_reasoning_is_removed_before_classification_and_forwarding(client, mocks):
+    # An IBAN inside the opaque blob would fire the detector if the blob were scanned.
+    blob = {"type": "reasoning.encrypted", "data": "NL91 ABNA 0417 1643 00", "index": 1}
+    summary = {"type": "reasoning.summary", "summary": "A fun fact.", "index": 0}
+    before = metrics.OPAQUE_REASONING._value.get()
+    r = await client.post("/v1/chat/completions", json=replayed([summary, blob]), headers=AUTH)
+    assert r.headers["x-privacy-route"] == "public", r.headers["x-privacy-reasons"]
+    assert "NL91" not in json.dumps(mocks.clef) and "NL91" not in json.dumps(mocks.public)
+    assert mocks.public[0]["messages"][1]["reasoning_details"] == [summary]
+    assert metrics.OPAQUE_REASONING._value.get() == before + 1
+
+
+async def test_readable_reasoning_is_still_classified(client, mocks):
+    summary = {"type": "reasoning.summary", "summary": "User's IBAN is NL91 ABNA 0417 1643 00.", "index": 0}
+    r = await client.post("/v1/chat/completions", json=replayed([summary]), headers=AUTH)
+    assert r.headers["x-privacy-route"] == "local" and "detector:iban" in r.headers["x-privacy-reasons"]
+    assert mocks.public == []

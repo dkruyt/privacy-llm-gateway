@@ -34,6 +34,7 @@ It does not use LiteLLM or any other gateway/proxy library.
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
 - [Limits and non-goals](#limits-and-non-goals)
+- [Opaque reasoning](#opaque-reasoning)
 - [Design decisions not fixed by the spec](#design-decisions-not-fixed-by-the-spec)
 
 ---
@@ -90,6 +91,7 @@ imports an HTTP client library. There is no telemetry.
 2. **Reject routing fields** sent by the client with 400: `api_base`, `base_url`, `api_key`, `custom_llm_provider`, `api_version`, `fallbacks`, `provider`, `route`.
 3. **`model == "local"`** routes local without classification. Any other model name, including `gpt-4o` or `openrouter/...`, is classified like `auto`.
 4. **Convert attachments** (PDF and text files) to text parts. Scanned, encrypted, broken or unsupported documents are rejected with 400.
+    - **Remove opaque reasoning**: `reasoning_details` items of type `reasoning.encrypted` and `signature` fields, which clients replay on follow-up turns (OpenRouter format). See [Opaque reasoning](#opaque-reasoning).
 5. **Sticky session**: if the session is flagged sensitive, route local (`session_sticky`). If Redis is unreachable, route local (`session_store_unavailable`) without pinning.
 6. **`pipeline.evaluate()`** runs. **Any** exception routes local (`classifier_internal_error`).
     - The extracted state is the *complete* request: every role, tool calls, tool results, tool schemas, `response_format`, `prompt`, `user` and unknown extra fields. Strings are NFKC-normalised and stripped of zero-width and bidi control characters.
@@ -240,7 +242,7 @@ Requests with model `local` carry verdict `uncertain` and no reasons, because th
 
 **Detector rules**:
 
-- Personal data: `email`, `phone_intl`, `phone_nl` (configurable national set), `iban` (mod-97), `credit_card` (Luhn and a known IIN), `nl_bsn` (11-test, whole token), `private_ip` (RFC 1918 and IPv6 ULA).
+- Personal data: `email`, `phone_intl`, `phone_nl` (configurable national set), `iban` (exact length per registry country plus mod-97; not glued to letters, digits, `+` or `=`), `credit_card` (Luhn and a known IIN), `nl_bsn` (11-test, whole token), `private_ip` (RFC 1918 and IPv6 ULA).
 - Credentials: `pem_private_key`, `aws_access_key`, `github_token`, `openai_style_key`, `slack_token`, `google_api_key`, `stripe_key`, `jwt`, `bearer_token`, `credential_assignment`, `url_with_credentials`, plus `detect_secrets:<Plugin>` (detect-secrets line scan with its filters).
 - Organisation: `internal_domain`, `confidential_marker`, `custom:<id>`.
 - Manipulation: `classifier_manipulation`.
@@ -262,6 +264,7 @@ the fixed reason set becomes `other`.
 | `privacy_clef_skipped_total` | counter | `why=detector\|unsupported\|too_large\|session\|local_model\|document` |
 | `privacy_session_events_total` | counter | `event=hit\|pinned\|store_unavailable\|write_failed` |
 | `privacy_documents_total` | counter | `type=pdf\|text\|other, result=converted\|rejected` |
+| `privacy_opaque_reasoning_stripped_total` | counter | none: encrypted reasoning items / signatures removed before classification |
 | `privacy_egress_total` | counter | `route, result=allowed\|blocked` (**blocked must stay 0**) |
 | `privacy_upstream_errors_total` | counter | `route, kind=http_4xx\|http_5xx\|timeout\|transport` |
 | `privacy_client_errors_total` | counter | `code` (400/401/404/413 error codes) |
@@ -315,6 +318,11 @@ which would print skipped secret values, is silenced.
     - Input lines are `{"label": "public"|"sensitive", "text": "..."}` or `{"label": ..., "request": {...chat body...}}`, as in [`calibration/examples.jsonl`](calibration/examples.jsonl).
     - It prints *leaked* (sensitive → public) and *released* (public → public) for the current config and a sweep of each threshold, for Clef alone and for the full pipeline.
     - It exits 1 if the current config leaks. `--output` writes scores only, never text.
+    - With Docker Compose, run it in the gateway container (the image has no `privacy-gateway` script; the input file is piped in):
+
+      ```bash
+      docker exec -i privacy-gateway-gateway-1 sh -c 'cat > /tmp/ex.jsonl && python -m privacy_gateway calibrate --config /etc/privacy-gateway/config.yaml --input /tmp/ex.jsonl' < calibration/examples.jsonl
+      ```
 
 ### Open WebUI
 
@@ -429,6 +437,26 @@ CLEF_LIVE_URL=http://host:8080/v1/systemone CLEF_LIVE_KEY=... pytest -m live tes
 - Upstream error bodies are not forwarded: they can echo content, and the client gets a generic 502/504.
 - The gateway does not do rate limiting, cost tracking, caching or load balancing.
 - In multiprocess mode, `privacy_config_info` keeps the previous hash at value 0 after a reload. Query `== 1`.
+
+## Opaque reasoning
+
+Reasoning models return their reasoning to the client, partly as an encrypted blob
+(OpenRouter: `reasoning_details` items with `type: "reasoning.encrypted"`; Anthropic models
+add a `signature` to `reasoning.text` items). Clients such as Open WebUI send these back
+with every follow-up so the provider can continue its reasoning.
+
+The gateway cannot read these blobs. Classifying them did harm: thousands of characters of
+random base64 lowered Clef's p(public) by about 0.1 (harmless follow-ups fell just under
+`public_min_prob`) and occasionally fired a detector (`detector:iban` on about 17% of blobs
+with the old IBAN rule). So the gateway **removes** them from every request, before
+classification and before forwarding. They are removed, not skipped: forwarding them
+unclassified would let a client hide data in that field. Readable reasoning (`reasoning.summary`,
+`reasoning.text`, `reasoning_content`) stays and is classified like any other text.
+
+Effect on clients: providers accept requests without the blob and reason from scratch. OpenAI
+models (the configured `openai/gpt-5-mini`) work unchanged. **Anthropic models with tools**
+require the signed thinking blocks during a tool-calling loop, so tool loops with an Anthropic
+public model would fail. See [ISSUE.md](ISSUE.md).
 
 ## Design decisions not fixed by the spec
 

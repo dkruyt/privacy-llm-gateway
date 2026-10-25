@@ -35,6 +35,7 @@ from .schemas import (
     ChatCompletionRequest,
     CompletionRequest,
     error_body,
+    strip_opaque_reasoning,
 )
 from .session import SessionStore, SessionStoreUnavailable, session_key, short_id
 from .upstream import EgressBlocked, UpstreamFailure, Upstreams
@@ -345,7 +346,9 @@ def create_app(holder: ConfigHolder, *, start_background: bool = True, install_s
             raise ClientError(exc.status, exc.code, "The attached document could not be processed.") from None
         for doc_type in conv.documents:
             metrics.document(doc_type, "converted")
-        body = conv.body
+        body, opaque = strip_opaque_reasoning(conv.body)
+        if opaque:
+            metrics.opaque_reasoning_stripped(opaque)
 
         timings: dict[str, float] = {}
         ev: Evaluation | None = None

@@ -46,6 +46,20 @@ MAX_DECODE_DEPTH = 2
 # --------------------------------------------------------------------------- checksums
 
 
+# IBAN length per country (SWIFT IBAN registry). Unknown country codes never match.
+IBAN_LENGTHS: dict[str, int] = {
+    "AD": 24, "AE": 23, "AL": 28, "AT": 20, "AZ": 28, "BA": 20, "BE": 16, "BG": 22, "BH": 22, "BI": 27,
+    "BR": 29, "BY": 28, "CH": 21, "CR": 22, "CY": 28, "CZ": 24, "DE": 22, "DJ": 27, "DK": 18, "DO": 28,
+    "EE": 20, "EG": 29, "ES": 24, "FI": 18, "FK": 18, "FO": 18, "FR": 27, "GB": 22, "GE": 22, "GI": 23,
+    "GL": 18, "GR": 27, "GT": 28, "HN": 28, "HR": 21, "HU": 28, "IE": 22, "IL": 23, "IQ": 23, "IS": 26,
+    "IT": 27, "JO": 30, "KW": 30, "KZ": 20, "LB": 28, "LC": 32, "LI": 21, "LT": 20, "LU": 20, "LV": 21,
+    "LY": 25, "MC": 27, "MD": 24, "ME": 22, "MK": 19, "MN": 20, "MR": 27, "MT": 31, "MU": 30, "NI": 28,
+    "NL": 18, "NO": 15, "OM": 23, "PK": 24, "PL": 28, "PS": 29, "PT": 25, "QA": 29, "RO": 24, "RS": 22,
+    "RU": 33, "SA": 24, "SC": 31, "SD": 18, "SE": 24, "SI": 19, "SK": 24, "SM": 27, "SO": 23, "ST": 25,
+    "SV": 28, "TL": 23, "TN": 24, "TR": 26, "UA": 29, "VA": 22, "VG": 24, "XK": 20, "YE": 30,
+}
+
+
 def iban_valid(candidate: str) -> bool:
     s = candidate.replace(" ", "").upper()
     if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", s):
@@ -99,7 +113,10 @@ _ULA = ipaddress.ip_network("fc00::/7")
 
 _EMAIL = re.compile(r"(?<![\w.+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 _PHONE_INTL = re.compile(r"(?<![\w+])\+[1-9]\d{0,2}(?:\s?\(0\))?(?:[\s.-]?\d){7,14}(?!\d)")
-_IBAN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{2}\d{2}(?:[ ]?[A-Za-z0-9]){11,34}")
+# Every start position (lookahead capture, so a non-IBAN run cannot swallow a real IBAN
+# that follows it). Not glued to letters, digits, "+" or "=" (base64); "/" is allowed so
+# an IBAN in a URL path still matches.
+_IBAN = re.compile(r"(?<![A-Za-z0-9+=])(?=([A-Za-z]{2}\d{2}(?:[ ]?[A-Za-z0-9]){11,30}))")
 _CARD = re.compile(r"(?<![\d-])\d(?:[ -]?\d){12,18}(?![\d])")
 _BSN = re.compile(r"(?<![\w.,-])\d{9}(?![\w-]|[.,]\d)")
 _IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d]|\.\d)")
@@ -269,9 +286,23 @@ def _any_valid(rx: re.Pattern[str], check: Callable[[str], bool]) -> Callable[[s
 
 
 def _iban_check(match: str) -> bool:
-    compact = match.replace(" ", "").upper()
-    # The run may swallow following text; try every prefix of plausible length.
-    return any(iban_valid(compact[:n]) for n in range(min(len(compact), 34), 14, -1))
+    """The run may continue into following words; cut it at the country's exact IBAN length.
+    The IBAN must end the run or be followed by a space (not glued to more characters)."""
+    length = IBAN_LENGTHS.get(match[:2].upper())
+    if length is None:
+        return False
+    chars = 0
+    for i, ch in enumerate(match):
+        if ch != " ":
+            chars += 1
+            if chars == length:
+                rest = match[i + 1 :]
+                return (not rest or rest[0] == " ") and iban_valid(match[: i + 1])
+    return False
+
+
+def _iban_rule(s: str) -> bool:
+    return any(_iban_check(m.group(1)) for m in _IBAN.finditer(s))
 
 
 def _card_check(match: str) -> bool:
@@ -311,7 +342,7 @@ class Detectors:
         add(_regex_rule("phone_intl", _PHONE_INTL))
         national = [re.compile(rx) for rx in policy.national_phone_patterns]
         add(_Rule("phone_nl", lambda s: any(rx.search(s) for rx in national)))
-        add(_Rule("iban", _any_valid(_IBAN, _iban_check)))
+        add(_Rule("iban", _iban_rule))
         add(_Rule("credit_card", _any_valid(_CARD, _card_check)))
         add(_Rule("nl_bsn", _any_valid(_BSN, bsn_valid)))
         add(

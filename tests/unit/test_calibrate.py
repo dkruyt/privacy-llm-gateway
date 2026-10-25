@@ -48,3 +48,12 @@ def test_bad_input_exit_2(loaded, tmp_path):
     p = tmp_path / "bad.jsonl"
     p.write_text('{"label": "maybe", "text": "x"}\n')
     assert run(loaded, str(p)) == 2
+
+
+def test_body_strips_opaque_reasoning_like_a_live_request():
+    from privacy_gateway.calibrate import _body
+
+    row = {"label": "public", "request": {"messages": [
+        {"role": "assistant", "content": "x", "reasoning_details": [{"type": "reasoning.encrypted", "data": "blob"}]},
+    ]}}
+    assert _body(row) == {"model": "auto", "messages": [{"role": "assistant", "content": "x"}]}

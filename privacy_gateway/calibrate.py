@@ -27,9 +27,10 @@ from .config import LoadedConfig, Thresholds
 from .decision import ClefResult, decide
 from .detectors import Detectors
 from .extract import extract
+from .schemas import strip_opaque_reasoning
 
-SWEEP_PUBLIC_MIN_PROB = (0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 0.98, 0.99)
-SWEEP_MIN_CONFIDENCE = (0.0, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+SWEEP_PUBLIC_MIN_PROB = (0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.98, 0.99)
+SWEEP_MIN_CONFIDENCE = (0.0, 0.4, 0.5, 0.6, 0.65, 0.7, 0.8, 0.9)
 SWEEP_CATEGORY_MAX = (0.1, 0.2, 0.3, 0.4, 0.5)
 
 
@@ -68,7 +69,8 @@ def _load(path: str) -> list[dict[str, Any]]:
 
 def _body(row: dict[str, Any]) -> dict[str, Any]:
     if isinstance(row.get("request"), dict):
-        return {"model": "auto", **row["request"]}
+        # Same pre-processing as a live request: opaque reasoning never reaches classification.
+        return strip_opaque_reasoning({"model": "auto", **row["request"]})[0]
     return {"model": "auto", "messages": [{"role": "user", "content": row["text"]}]}
 
 
