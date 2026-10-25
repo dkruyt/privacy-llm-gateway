@@ -460,6 +460,34 @@ def test_session_sticky_and_isolation():
         assert sid not in k and KEY not in k
 
 
+def test_prefix_cache_classifies_only_new_messages():
+    sid = f"prefix-{uuid.uuid4()}"
+    turn1 = chat()
+    assert post(turn1, session=sid).headers["x-privacy-route"] == "public"
+    before = sample(scrape(), "privacy_prefix_cache_total", {"result": "hit_delta"})
+    new = [{"role": "assistant", "content": "Paris."}, {"role": "user", "content": "And Spain?"}]
+    turn2 = {**turn1, "messages": turn1["messages"] + new}
+    assert post(turn2, session=sid).headers["x-privacy-route"] == "public"
+    bodies = stats(CLASSIFIER)["bodies"]
+    assert len(bodies) == 2 and bodies[1]["state"]["request"] == {"messages": new}
+    assert sample(scrape(), "privacy_prefix_cache_total", {"result": "hit_delta"}) == before + 1
+    keys = sorted(rds.scan_iter("privacy:prefix:*"))
+    assert len(keys) == 2 and all(rds.get(k) == "public" and len(k) == len("privacy:prefix:") + 64 for k in keys)
+    # identical retry: no classifier call
+    assert post(turn2, session=sid).headers["x-privacy-route"] == "public"
+    assert stats(CLASSIFIER)["count"] == 2
+    # sensitive delta: local and pinned with one classifier call
+    set_mode(CLASSIFIER, "keyword")
+    turn3 = {**turn2, "messages": turn2["messages"] + [{"role": "assistant", "content": "Madrid."},
+                                                       {"role": "user", "content": "SENSITIVE_KEYWORD"}]}
+    public_before = stats(PUBLIC)["count"]
+    r = post(turn3, session=sid)
+    assert r.headers["x-privacy-route"] == "local"
+    assert "classifier_choice:personal_data" in r.headers["x-privacy-reasons"].split(",")
+    assert stats(PUBLIC)["count"] == public_before
+    assert stats(CLASSIFIER)["count"] == 3 and len(session_keys()) == 1
+
+
 def test_session_ttl_refresh_and_expiry():
     sid = f"ttl-{uuid.uuid4()}"
     post(chat(f"mail {PLANTED[0]}"), session=sid)

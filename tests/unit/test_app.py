@@ -374,3 +374,43 @@ async def test_readable_reasoning_is_still_classified(client, mocks):
     r = await client.post("/v1/chat/completions", json=replayed([summary]), headers=AUTH)
     assert r.headers["x-privacy-route"] == "local" and "detector:iban" in r.headers["x-privacy-reasons"]
     assert mocks.public == []
+
+
+# ------------------------------------------------------------------ prefix cache
+
+
+@pytest.fixture
+async def prefix_client(cfg_dict, write_cfg, mocks):
+    from privacy_gateway.config import load_config
+
+    cfg_dict["policy"]["session"]["prefix_cache"] = {"enabled": True}
+    holder = make_holder(load_config(write_cfg(cfg_dict)), transports=mocks.transports(), redis_client=mocks.redis)
+    app = create_app(holder, start_background=False)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gw") as c:
+        yield c
+
+
+async def test_prefix_cache_second_turn_classifies_delta(prefix_client, mocks):
+    hdr = {**AUTH, "x-session-id": "chat-1"}
+    turn1 = chat("What is the capital of France?")
+    r = await prefix_client.post("/v1/chat/completions", json=turn1, headers=hdr)
+    assert r.headers["x-privacy-route"] == "public"
+    new = [{"role": "assistant", "content": "Paris."}, {"role": "user", "content": "And Spain?"}]
+    turn2 = {**turn1, "messages": turn1["messages"] + new}
+    r = await prefix_client.post("/v1/chat/completions", json=turn2, headers=hdr)
+    assert r.headers["x-privacy-route"] == "public"
+    assert len(mocks.classifier) == 2
+    assert mocks.classifier[1]["state"]["request"] == {"messages": new}
+    # other session: no shared cache entry → full classification
+    r = await prefix_client.post("/v1/chat/completions", json=turn2, headers={**AUTH, "x-session-id": "chat-2"})
+    assert mocks.classifier[2]["state"]["request"]["messages"] == turn2["messages"]
+
+
+async def test_prefix_cache_off_by_default(client, mocks):
+    hdr = {**AUTH, "x-session-id": "chat-1"}
+    turn1 = chat()
+    await client.post("/v1/chat/completions", json=turn1, headers=hdr)
+    turn2 = {**turn1, "messages": turn1["messages"] + [{"role": "assistant", "content": "x"}, {"role": "user", "content": "y"}]}
+    await client.post("/v1/chat/completions", json=turn2, headers=hdr)
+    assert mocks.classifier[1]["state"]["request"]["messages"] == turn2["messages"]
+    assert not any(k.startswith("privacy:prefix:") for k in mocks.redis.data)

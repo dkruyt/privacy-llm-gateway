@@ -117,6 +117,7 @@ if ROLE == "classifier":
             state["count"] -= 1
             state["arrivals"].pop()
             return {"answers": {"ok": {"type": "noul", "noul": 1.0}}}
+        state["bodies"].append(body)
         mode = state["mode"]
         try:
             if mode == "hang":

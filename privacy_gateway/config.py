@@ -245,10 +245,19 @@ class Thresholds(_Model):
     manipulation_max_prob: float = Field(0.30, ge=0, le=1)
 
 
+class PrefixCachePolicy(_Model):
+    # Remember conversation prefixes judged public; classify only new messages next turn.
+    enabled: bool = False
+    # Distance from every threshold a delta result needs to count as "clearly public".
+    borderline_margin: float = Field(0.10, ge=0, le=0.5)
+    ttl_seconds: int = Field(86_400, ge=60)
+
+
 class SessionPolicy(_Model):
     ttl_seconds: int = Field(86_400, ge=60)
     header: str = Field("x-session-id", pattern=r"^[A-Za-z0-9-]+$")
     sticky_on_uncertain: bool = True
+    prefix_cache: PrefixCachePolicy = Field(default_factory=PrefixCachePolicy)
 
     @field_validator("header")
     @classmethod

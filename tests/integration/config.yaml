@@ -35,6 +35,8 @@ stamp:
 policy:
   session:
     ttl_seconds: 60
+    prefix_cache:
+      enabled: true
   documents:
     allow_public: false
     max_bytes: 1000000

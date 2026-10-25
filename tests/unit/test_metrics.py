@@ -33,6 +33,7 @@ ALLOWED_LABELS = {
     "privacy_classifier_calls_total": {"result": set(metrics.CLASSIFIER_RESULTS)},
     "privacy_classifier_skipped_total": {"why": set(metrics.SKIP_WHY)},
     "privacy_session_events_total": {"event": set(metrics.SESSION_EVENTS)},
+    "privacy_prefix_cache_total": {"result": set(metrics.PREFIX_RESULTS)},
     "privacy_documents_total": {"type": set(metrics.DOC_TYPES), "result": set(metrics.DOC_RESULTS)},
     "privacy_egress_total": {"route": set(metrics.ROUTES), "result": set(metrics.EGRESS_RESULTS)},
     "privacy_upstream_errors_total": {"route": set(metrics.ROUTES), "kind": set(metrics.UPSTREAM_KINDS)},

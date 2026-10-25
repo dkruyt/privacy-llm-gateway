@@ -34,6 +34,11 @@ class FakeRedis:
         item = self._live(key)
         return item[0] if item else None
 
+    async def mget(self, keys):
+        self.calls.append(("mget", tuple(keys)))
+        self._check()
+        return [item[0] if (item := self._live(k)) else None for k in keys]
+
     async def set(self, key, value, ex=None):
         self.calls.append(("set", key, value, ex))
         self._check()

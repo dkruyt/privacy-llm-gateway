@@ -75,8 +75,9 @@ It does not use LiteLLM or any other gateway/proxy library.
 | `classifier.py` | `/v1/systemone` client, question builder, strict response validation. |
 | `decision.py` | Pure `decide()`. 100 % branch-covered. |
 | `documents.py` | PDF / text attachments → text parts (pypdf in a worker thread). |
-| `session.py` | Redis sticky-session store, fail-closed. |
-| `pipeline.py` | `evaluate()`: extract → detectors → short-circuit → classifier → decide. |
+| `session.py` | Redis sticky-session store, fail-closed; also the prefix-cache reads and writes. |
+| `prefix_cache.py` | Prefix-cache key chain (HMAC), policy fingerprint, "clearly public" check. |
+| `pipeline.py` | `evaluate()`: extract → detectors → short-circuit → [prefix cache] → classifier → decide. |
 | `upstream.py` | Two `httpx.AsyncClient`s (`trust_env=False`, no redirects, no retries). Egress guard. |
 | `logs.py` | Content-free JSON logger, one decision line per request. |
 | `calibrate.py` | Labelled JSONL → classifier → threshold sweep. |
@@ -97,6 +98,7 @@ imports an HTTP client library. There is no telemetry.
     - The extracted state is the *complete* request: every role, tool calls, tool results, tool schemas, `response_format`, `prompt`, `user` and unknown extra fields. Strings are NFKC-normalised and stripped of zero-width and bidi control characters.
     - Detectors run on every string, plus its base64- and %-decoded variants. Any hit routes local and pins the session, and the classifier is skipped.
     - Documents (unless `documents.allow_public`), unsupported media and oversize states also skip the classifier.
+    - **Prefix cache** (`policy.session.prefix_cache.enabled`, off by default): see [Prefix cache](#prefix-cache). On a hit only the new messages are classified.
     - The classifier answers `verdict` (choice over the categories), `has_<category>` (noul) and `manipulation` (noul). The response is validated strictly.
     - `decide()` returns public only if no reason exists at all and all four thresholds pass.
 7. **Pin**: if `decision.sticky`, the session flag is set with a TTL.
@@ -172,6 +174,7 @@ The fully commented reference is [`config.example.yaml`](config.example.yaml). S
 | `stamp.key_file` | `null` | HMAC key file (≥ 32 bytes); `null` = random per process. |
 | `policy.thresholds` | 0.80 / 0.60 / 0.30 / 0.30 | `public_min_prob`, `min_confidence`, `category_max_prob`, `manipulation_max_prob`. **Not calibrated.** |
 | `policy.session` | 86400 / `x-session-id` / true | `ttl_seconds`, `header`, `sticky_on_uncertain`. |
+| `policy.session.prefix_cache` | false / 0.10 / 86400 | `enabled`, `borderline_margin` (0–0.5), `ttl_seconds`. See [Prefix cache](#prefix-cache). |
 | `policy.documents` | false / 25 MiB / 300 / 20 | `allow_public`, `max_bytes`, `max_pages`, `min_text_chars`. |
 | `policy.state_notice`, `verdict_instructions`, `manipulation_instructions` | built-in | Text sent to the classifier. |
 | `policy.categories` | — | `public` and `uncertain` (description only) plus ≥ 1 sensitive category (`description` + `question`). |
@@ -263,6 +266,7 @@ the fixed reason set becomes `other`.
 | `privacy_classifier_calls_total` | counter | `result=ok\|timeout\|transport_error\|http_error\|invalid` |
 | `privacy_classifier_skipped_total` | counter | `why=detector\|unsupported\|too_large\|session\|local_model\|document` |
 | `privacy_session_events_total` | counter | `event=hit\|pinned\|store_unavailable\|write_failed` |
+| `privacy_prefix_cache_total` | counter | `result=miss\|hit_full\|hit_delta\|borderline\|delta_sensitive\|unavailable\|stored\|store_failed` |
 | `privacy_documents_total` | counter | `type=pdf\|text\|other, result=converted\|rejected` |
 | `privacy_opaque_reasoning_stripped_total` | counter | none: encrypted reasoning items / signatures removed before classification |
 | `privacy_egress_total` | counter | `route, result=allowed\|blocked` (**blocked must stay 0**) |
@@ -292,7 +296,7 @@ JSON lines on stdout. Each request produces exactly one `decision` line with the
 - `key_id`, `endpoint`, `requested`, `route`, `verdict`, `reasons`, `stream`
 - `session`: the last 12 hex characters of the hashed session key
 - `session_source`: `header`, `metadata` or `derived`
-- `classifier`: choice, p_public, confidence, per-category probabilities, manipulation, input_tokens
+- `classifier`: choice, p_public, confidence, per-category probabilities, manipulation, input_tokens; with the prefix cache also `mode` (`full`, `delta`, `delta_full`, `cached`) and `prefix_messages` (scores are those of the call that decided)
 - `documents`, `status`
 - `timings_ms`: detectors, classifier, classification, upstream_ttfb, total
 
@@ -427,15 +431,50 @@ CLASSIFIER_LIVE_URL=http://host:8080/v1/systemone CLASSIFIER_LIVE_KEY=... pytest
 | Session stays pinned | Expected for `ttl_seconds`, refreshed on every hit. Start a new conversation, or delete the `privacy:sess:*` key. |
 | `/metrics` 404 on 8080 | It is only on `server.metrics_listen`. |
 
+## Prefix cache
+
+Off by default. With `policy.session.prefix_cache.enabled: true` the gateway remembers, per
+session, which conversation prefixes were routed public, so a follow-up turn does not send the
+whole conversation to the classifier again.
+
+- **Key**: `privacy:prefix:` + an HMAC chain (stamp key) over a policy fingerprint (classifier
+  model, questions, `state_notice`, thresholds, margin), the session key, the normalised request
+  without `messages` (tools, `response_format`, other fields) and then each message in turn. One
+  `MGET` finds the longest cached prefix. **Value**: the literal string `public`. No content and no
+  plain content hashes are stored. A policy change (SIGHUP) or a new stamp key empties the cache
+  in effect.
+- **Only public decisions are stored**, with `ttl_seconds`, after every public turn. Sensitive
+  turns are covered by the sticky flag; uncertain turns and errors are never cached.
+- Detectors, documents and unsupported media are still checked on the **full** request every turn.
+  The cache only replaces the classifier call.
+- **Lookup**:
+    - `hit_full`: the identical request was public (regenerate, retry): public, no classifier call.
+    - `hit_delta`: only the messages after the prefix (usually the previous answer plus the new
+      user message) are classified. *Clearly public* (public choice and every threshold passed by
+      at least `borderline_margin`) → public.
+    - `delta_sensitive`: the delta alone is sensitive → local and pinned, without a second call.
+    - `borderline`: anything else → the full request is classified as usual and decides (it can
+      still be `too_large_for_classifier`).
+    - A classifier error on the delta call routes local (`classifier_error:*`), as usual.
+    - `miss`: no cached prefix (first turn, edited history, changed tools or fields) → full classification.
+    - `unavailable`: Redis failed during the lookup → full classification. (The sticky check before it
+      already fails closed.)
+- Effect: fewer classifier tokens and lower latency per turn, and long conversations that exceed
+  `classifier.max_state_chars` keep routing public while each new turn is clearly public.
+- **Trade-off**: each turn is judged without the earlier messages. Information split across turns
+  (a name in one turn, a diagnosis five turns later) can pass where a full classification would
+  have caught the combination. Detectors and the borderline margin reduce this; they do not
+  remove it. That is why it is opt-in.
+
 ## Limits and non-goals
 
 - **Thresholds are not calibrated.** The defaults come from the spec. Against a POC Clef-Flash (Q8_0) on the 63 bundled examples, the current config leaked 0 of 32 sensitive examples and released 31 of 31 public ones. That set is small and synthetic; calibrate on labelled samples of your own traffic.
 - Classification is text-only. Images, audio, non-document files and token-id prompts are never sent public (`unsupported:*`). There is no OCR.
 - Detectors are pattern-based and aggressive. They cannot recognise every kind of sensitive content; that is the classifier's job. The classifier is a probabilistic model, so the thresholds and sticky sessions bias every doubt towards local.
-- The classifier needs the whole state in its context window. Larger requests are never truncated; they go local.
+- The classifier needs the whole state in its context window. Larger requests are never truncated; they go local (unless the [prefix cache](#prefix-cache) can classify only the new messages).
 - Session pinning is per `(api key, session id)`. Clients that change their system prompt or first message on every turn, without sending a session id, get a new derived session each turn.
 - Upstream error bodies are not forwarded: they can echo content, and the client gets a generic 502/504.
-- The gateway does not do rate limiting, cost tracking, caching or load balancing.
+- The gateway does not do rate limiting, cost tracking, response caching or load balancing.
 - In multiprocess mode, `privacy_config_info` keeps the previous hash at value 0 after a reload. Query `== 1`.
 
 ## Opaque reasoning

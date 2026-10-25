@@ -175,6 +175,14 @@ ts("Classifier input tokens", [
 ts("Sessions", [target("sum by (event) (rate(privacy_session_events_total[$__rate_interval]))", "{{event}}")],
    12, 12, y, "reqps", stack=True, desc="hit = request routed local by a sticky session; pinned = session flagged sensitive.")
 _y = y + 8
+y = _y
+ts("Prefix cache", [target("sum by (result) (rate(privacy_prefix_cache_total{result!~\"stored|store_failed\"}[$__rate_interval]))", "{{result}}")],
+   0, 12, y, "reqps", stack=True,
+   desc="policy.session.prefix_cache. hit_full = no classifier call; hit_delta = only new messages classified; "
+        "borderline = delta re-run as full classification; delta_sensitive = delta routed local; miss = no cached prefix.")
+ts("Prefix cache writes", [target("sum by (result) (rate(privacy_prefix_cache_total{result=~\"stored|store_failed\"}[$__rate_interval]))", "{{result}}")],
+   12, 12, y, "reqps", stack=True, desc="Public decisions stored as a cached prefix. store_failed = Redis write error.")
+_y = y + 8
 
 # ---------------------------------------------------------------- upstreams
 row("Upstreams & egress")

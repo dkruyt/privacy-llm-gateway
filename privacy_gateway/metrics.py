@@ -45,6 +45,7 @@ VERDICTS = ("public", "sensitive", "uncertain")
 CLASSIFIER_RESULTS = ("ok", "timeout", "transport_error", "http_error", "invalid")
 SKIP_WHY = ("detector", "unsupported", "too_large", "session", "local_model", "document")
 SESSION_EVENTS = ("hit", "pinned", "store_unavailable", "write_failed")
+PREFIX_RESULTS = ("miss", "hit_full", "hit_delta", "borderline", "delta_sensitive", "stored", "store_failed", "unavailable")
 DOC_TYPES = ("pdf", "text", "other")
 DOC_RESULTS = ("converted", "rejected")
 EGRESS_RESULTS = ("allowed", "blocked")
@@ -73,6 +74,11 @@ ROUTE_REASONS = _c("privacy_route_reasons_total", "Routing reasons (fixed code s
 CLASSIFIER_CALLS = _c("privacy_classifier_calls_total", "Classifier calls by result.", ("result",))
 CLASSIFIER_SKIPPED = _c("privacy_classifier_skipped_total", "Requests not sent to the classifier, by cause.", ("why",))
 SESSION_EVENTS_TOTAL = _c("privacy_session_events_total", "Sticky-session events.", ("event",))
+PREFIX_CACHE = _c(
+    "privacy_prefix_cache_total",
+    "Classification prefix cache: lookups (miss/hit_full/hit_delta/borderline/delta_sensitive/unavailable) and writes.",
+    ("result",),
+)
 DOCUMENTS = _c("privacy_documents_total", "Attached documents by type and result.", ("type", "result"))
 OPAQUE_REASONING = _c(
     "privacy_opaque_reasoning_stripped_total",
@@ -158,6 +164,10 @@ def session_event(event: str) -> None:
     SESSION_EVENTS_TOTAL.labels(event=_check(event, SESSION_EVENTS)).inc()
 
 
+def prefix_cache(result: str) -> None:
+    PREFIX_CACHE.labels(result=_check(result, PREFIX_RESULTS)).inc()
+
+
 def document(doc_type: str, result: str) -> None:
     DOCUMENTS.labels(type=_check(doc_type, DOC_TYPES), result=_check(result, DOC_RESULTS)).inc()
 
@@ -235,6 +245,8 @@ def init_label_sets(key_ids: Iterable[str] = (), known_reasons: Iterable[str] = 
         CLASSIFIER_SKIPPED.labels(why=why)
     for ev in SESSION_EVENTS:
         SESSION_EVENTS_TOTAL.labels(event=ev)
+    for res in PREFIX_RESULTS:
+        PREFIX_CACHE.labels(result=res)
     for t in DOC_TYPES:
         for res in DOC_RESULTS:
             DOCUMENTS.labels(type=t, result=res)

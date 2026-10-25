@@ -27,7 +27,8 @@ from .detectors import Detectors
 from .documents import DocumentRejected, convert
 from .extract import session_seed
 from .logs import log
-from .pipeline import Evaluation, evaluate
+from .pipeline import Evaluation, PrefixContext, evaluate
+from .prefix_cache import fingerprint as prefix_fingerprint
 from .schemas import (
     GATEWAY_ONLY_FIELDS,
     MODEL_LOCAL,
@@ -58,6 +59,8 @@ class Runtime:
     upstreams: Upstreams
     sessions: SessionStore
     known_reasons: set[str] = field(default_factory=set)
+    stamp_key: bytes = b""
+    prefix_fingerprint: str = ""
 
     @property
     def config(self):
@@ -87,14 +90,21 @@ def build_runtime(loaded: LoadedConfig, transports: dict | None = None, redis_cl
     known |= {f"classifier_choice:{c}" for c in cfg.policy.categories}
     known |= {f"classifier_category:{c}" for c in cfg.policy.sensitive_categories}
     known |= {f"classifier_error:{c}" for c in ERROR_CODES}
+    stamp_key = loaded.stamp_key or _PROCESS_STAMP_KEY
+    classifier = ClassifierClient(cfg.classifier, cfg.policy, transport=transports.get("classifier"))
     return Runtime(
         loaded=loaded,
         keys=KeyMap(cfg.auth),
         detectors=detectors,
-        classifier=ClassifierClient(cfg.classifier, cfg.policy, transport=transports.get("classifier")),
-        upstreams=Upstreams(cfg.upstreams, loaded.stamp_key or _PROCESS_STAMP_KEY, transports),
+        classifier=classifier,
+        upstreams=Upstreams(cfg.upstreams, stamp_key, transports),
         sessions=SessionStore(cfg.redis, cfg.policy.session.ttl_seconds, client=redis_client),
         known_reasons=known,
+        stamp_key=stamp_key,
+        prefix_fingerprint=prefix_fingerprint(
+            cfg.classifier.model, classifier.questions, cfg.policy.state_notice, cfg.policy.thresholds,
+            cfg.policy.session.prefix_cache.borderline_margin,
+        ),
     )
 
 
@@ -375,6 +385,11 @@ def create_app(holder: ConfigHolder, *, start_background: bool = True, install_s
                 metrics.classifier_skipped("session")
                 decision = forced_local("session_store_unavailable")
             if decision is None:
+                pc = cfg.policy.session.prefix_cache
+                prefix = PrefixContext(
+                    store=rt.sessions, stamp_key=rt.stamp_key, session_key=skey,
+                    fingerprint=rt.prefix_fingerprint, margin=pc.borderline_margin, ttl_seconds=pc.ttl_seconds,
+                ) if pc.enabled else None
                 try:
                     ev = await evaluate(
                         body=body,
@@ -383,6 +398,7 @@ def create_app(holder: ConfigHolder, *, start_background: bool = True, install_s
                         detectors=rt.detectors,
                         classifier=rt.classifier,
                         documents=list(conv.documents),
+                        prefix=prefix,
                     )
                     decision = ev.decision
                     timings.update(ev.timings_ms)

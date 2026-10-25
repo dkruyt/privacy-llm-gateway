@@ -100,6 +100,14 @@ policy:
     ttl_seconds: 86400            # pin duration, refreshed on every hit
     header: x-session-id          # session id header (else metadata.session_id, else derived)
     sticky_on_uncertain: true     # also pin on unsupported media / low prob / low confidence / uncertain
+    # Classification cache per conversation prefix (Redis, next to the sticky flag).
+    # Remembers prefixes judged public; the next turn classifies only the new messages.
+    # A borderline result on those runs the full classification again. Information
+    # split across turns is judged per turn, so this is opt-in (see README).
+    prefix_cache:
+      enabled: false
+      borderline_margin: 0.10     # distance from every threshold that counts as "clearly public"
+      ttl_seconds: 86400          # refreshed on every public turn
 
   documents:
     allow_public: false           # false: any attached document forces local + pin

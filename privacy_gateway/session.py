@@ -3,6 +3,7 @@
 Key   "privacy:sess:" + sha256(key_id + "\\0" + session_seed)
 Value the literal string "sensitive"
 Never stores content, the raw session id or the API key.
+Also holds the public-prefix cache (prefix_cache.py) on the same connection.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import redis.asyncio as aioredis
 from redis.exceptions import RedisError
 
 from .config import RedisConfig
+from .prefix_cache import VALUE as PREFIX_VALUE
 
 KEY_PREFIX = "privacy:sess:"
 VALUE = "sensitive"
@@ -61,6 +63,30 @@ class SessionStore:
         """True on success. Failures are reported by the caller (session_store_write_failed)."""
         try:
             await self._redis.set(key, VALUE, ex=self._ttl)
+            return True
+        except (RedisError, OSError):
+            return False
+
+    async def longest_public_prefix(self, keys: list[str]) -> int:
+        """Number of messages in the longest cached public prefix (0 = none).
+
+        Raises SessionStoreUnavailable; the caller then ignores the cache.
+        """
+        try:
+            values = await self._redis.mget(keys)
+        except (RedisError, OSError) as exc:
+            raise SessionStoreUnavailable(type(exc).__name__) from None
+        for i in range(len(values) - 1, -1, -1):
+            v = values[i]
+            if isinstance(v, bytes):
+                v = v.decode("utf-8", "replace")
+            if v == PREFIX_VALUE:
+                return i + 1
+        return 0
+
+    async def mark_public_prefix(self, key: str, ttl_seconds: int) -> bool:
+        try:
+            await self._redis.set(key, PREFIX_VALUE, ex=ttl_seconds)
             return True
         except (RedisError, OSError):
             return False

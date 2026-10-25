@@ -186,3 +186,14 @@ def test_reload_build_failure_keeps_old(cfg_dict, write_cfg):
     before = holder.current
     assert holder.reload() is False
     assert holder.current is before
+
+
+def test_prefix_cache_defaults_and_bounds(cfg_dict, write_cfg):
+    from privacy_gateway.config import ConfigError, load_config
+
+    pc = load_config(write_cfg(cfg_dict)).config.policy.session.prefix_cache
+    assert (pc.enabled, pc.borderline_margin, pc.ttl_seconds) == (False, 0.10, 86_400)
+    for bad in ({"borderline_margin": 0.6}, {"borderline_margin": -0.1}, {"ttl_seconds": 10}, {"unknown": 1}):
+        cfg_dict["policy"]["session"]["prefix_cache"] = bad
+        with pytest.raises(ConfigError):
+            load_config(write_cfg(cfg_dict))
