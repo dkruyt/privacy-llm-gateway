@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (hash-pinned)
+        run: |
+          python -m pip install --require-hashes -r requirements-test.lock
+          python -m pip install --no-deps -e .
+      - name: Unit tests
+        run: python -m pytest -q
+      - name: Example config is valid
+        env: {LOCAL_KEY: x, PUBLIC_KEY: x, CLASSIFIER_KEY: x}
+        run: privacy-llm-gateway check-config --config config.example.yaml
+      - name: Grafana dashboard is up to date
+        run: |
+          python grafana/build_dashboard.py
+          git diff --exit-code grafana/dashboards
+
+  docker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build --target runtime -t privacy-llm-gateway:ci .
+      - name: Integration suite
+        run: tests/integration/run.sh
