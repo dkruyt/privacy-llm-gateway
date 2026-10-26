@@ -3,7 +3,11 @@
 #   tests/integration/run.sh [extra pytest args]
 set -uo pipefail
 cd "$(dirname "$0")/../.."
-P=(docker compose -p privacy-gateway-it --profile test)
+# compose.yml requires these for the production services; the test profile never starts
+# them, but compose interpolates the whole file.
+export REDIS_PASSWORD="${REDIS_PASSWORD:-unused}" WEBUI_SECRET_KEY="${WEBUI_SECRET_KEY:-unused}" \
+  OPENWEBUI_GATEWAY_KEY="${OPENWEBUI_GATEWAY_KEY:-unused}" GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-unused}"
+P=(docker compose -p privacy-llm-gateway-it --profile test)
 SERVICES=(redis-test mock-public mock-local mock-classifier gateway-test gateway-noredis)
 
 cleanup() { "${P[@]}" down -v --remove-orphans >/dev/null 2>&1; }
@@ -24,8 +28,8 @@ echo "== pytest"
 rc=$?
 
 echo "== log hygiene: grep gateway logs for every planted value"
-"${P[@]}" logs --no-color gateway-test gateway-noredis > /tmp/privacy-gateway-it.log 2>&1
-python3 - /tmp/privacy-gateway-it.log <<'PY'
+"${P[@]}" logs --no-color gateway-test gateway-noredis > /tmp/privacy-llm-gateway-it.log 2>&1
+python3 - /tmp/privacy-llm-gateway-it.log <<'PY'
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location("planted", "tests/integration/planted.py")
 mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
@@ -41,5 +45,5 @@ if decisions == 0:
 print("ok: none found")
 PY
 hyg=$?
-rm -f /tmp/privacy-gateway-it.log
+rm -f /tmp/privacy-llm-gateway-it.log
 [ $rc -eq 0 ] && [ $hyg -eq 0 ]

@@ -1,6 +1,6 @@
 """Optional live suite against a real classifier (decision model) server.
 
-    CLASSIFIER_LIVE_URL=http://host:8080/v1/systemone CLASSIFIER_LIVE_KEY=... CLASSIFIER_LIVE_MODEL=clef-flash \
+    CLASSIFIER_LIVE_URL=http://host:8080/v1/systemone CLASSIFIER_LIVE_KEY=... CLASSIFIER_LIVE_MODEL=classifier-model \
         pytest -m live tests/live
 
 Runs calibration/examples.jsonl through the real pipeline (detectors + classifier + decide)
@@ -16,8 +16,8 @@ from urllib.parse import urlsplit
 import pytest
 import yaml
 
-from privacy_gateway.calibrate import _load, evaluate_setting, score_all
-from privacy_gateway.config import load_config
+from privacy_llm_gateway.calibrate import _load, evaluate_setting, score_all
+from privacy_llm_gateway.config import load_config
 
 pytestmark = pytest.mark.live
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,7 +30,7 @@ def live_config(tmp_path_factory):
         pytest.skip("CLASSIFIER_LIVE_URL not set")
     d = yaml.safe_load((ROOT / "config.example.yaml").read_text())
     d["classifier"]["url"] = URL
-    d["classifier"]["model"] = os.environ.get("CLASSIFIER_LIVE_MODEL", "clef-flash")
+    d["classifier"]["model"] = os.environ.get("CLASSIFIER_LIVE_MODEL", "classifier-model")
     d["classifier"]["api_key"] = "${CLASSIFIER_LIVE_KEY}" if os.environ.get("CLASSIFIER_LIVE_KEY") else None
     d["classifier"]["timeout_s"] = 120
     d["upstreams"]["local_hosts"].append(urlsplit(URL).hostname)

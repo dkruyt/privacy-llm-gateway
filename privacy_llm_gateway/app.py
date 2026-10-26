@@ -280,7 +280,7 @@ def create_app(holder: ConfigHolder, *, start_background: bool = True, install_s
         rt: Runtime = holder.current
         _auth(request, rt)
         data = [
-            {"id": mid, "object": "model", "created": 0, "owned_by": "privacy-gateway"}
+            {"id": mid, "object": "model", "created": 0, "owned_by": "privacy-llm-gateway"}
             for mid in ("auto", "local")
         ]
         return {"object": "list", "data": data}

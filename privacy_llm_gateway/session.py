@@ -39,6 +39,7 @@ class SessionStore:
         self._ttl = ttl_seconds
         self._redis = client or aioredis.Redis.from_url(
             cfg.url,
+            password=cfg.password,
             socket_connect_timeout=cfg.connect_timeout_s,
             socket_timeout=cfg.timeout_s,
             retry_on_timeout=False,

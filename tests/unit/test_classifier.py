@@ -7,7 +7,7 @@ import httpx
 import pytest
 import respx
 
-from privacy_gateway.classifier import ClassifierClient, ClassifierError, StateTooLarge, build_questions, parse_response
+from privacy_llm_gateway.classifier import ClassifierClient, ClassifierError, StateTooLarge, build_questions, parse_response
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def good_response(policy, choice="public"):
     for c in policy.sensitive_categories:
         answers[f"has_{c}"] = {"type": "noul", "noul": 0.05}
     answers["manipulation"] = {"type": "noul", "noul": 0.01}
-    return {"model": "clef-flash", "answers": answers, "usage": {"input_tokens": 321, "output_tokens": 0}}
+    return {"model": "classifier-model", "answers": answers, "usage": {"input_tokens": 321, "output_tokens": 0}}
 
 
 # ------------------------------------------------------------------ questions / payload

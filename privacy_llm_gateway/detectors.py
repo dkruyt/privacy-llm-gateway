@@ -156,8 +156,8 @@ _MANIPULATION = re.compile(
             r"(?:only\s+|all\s+|purely\s+)?(?:public|non[\s-]?sensitive)\s+(?:information|data|knowledge|content)",
             r"[\"']verdict[\"']\s*:\s*[\"']public[\"']",
             r"\bthe\s+classifier\b",
-            r"\bclef\b",
-            r"\bprivacy[\s_-]*(?:gateway|filter|router)\b",
+            r"\bprivacy[\s_-]*(?:llm[\s_-]*)?(?:gateway|filter|router)\b",
+            # Dutch: "ignore all previous instructions"
             r"\bnegeer\s+(?:alle\s+)?(?:vorige|eerdere|voorgaande)\s+(?:instructies|opdrachten)",
         ]
     ),

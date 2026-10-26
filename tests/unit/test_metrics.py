@@ -6,8 +6,8 @@ import httpx
 import pytest
 from prometheus_client.parser import text_string_to_metric_families
 
-from privacy_gateway import metrics
-from privacy_gateway.app import create_app, make_holder
+from privacy_llm_gateway import metrics
+from privacy_llm_gateway.app import create_app, make_holder
 from tests.conftest import TEST_KEY
 from tests.unit.test_app import AUTH, Mocks, chat
 

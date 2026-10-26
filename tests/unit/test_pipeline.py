@@ -5,10 +5,10 @@ import json
 import pytest
 import respx
 
-from privacy_gateway.classifier import ClassifierClient
-from privacy_gateway.config import PolicyConfig
-from privacy_gateway.detectors import Detectors
-from privacy_gateway.pipeline import evaluate
+from privacy_llm_gateway.classifier import ClassifierClient
+from privacy_llm_gateway.config import PolicyConfig
+from privacy_llm_gateway.detectors import Detectors
+from privacy_llm_gateway.pipeline import evaluate
 from tests.unit.test_classifier import good_response
 
 

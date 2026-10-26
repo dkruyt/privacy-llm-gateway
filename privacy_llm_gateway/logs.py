@@ -13,7 +13,7 @@ import sys
 import time
 from typing import Any
 
-LOGGER_NAME = "privacy_gateway"
+LOGGER_NAME = "privacy_llm_gateway"
 
 
 class JsonFormatter(logging.Formatter):

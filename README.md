@@ -1,22 +1,69 @@
-# privacy-gateway
+# privacy-llm-gateway
 
-A privacy-aware, OpenAI-compatible LLM gateway. Every app talks to one endpoint.
-Every request with model `auto` is classified **on this machine** before anything
-leaves it:
+[![CI](https://github.com/dkruyt/privacy-llm-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/dkruyt/privacy-llm-gateway/actions/workflows/ci.yml)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
 
-| Classification | Route |
+A privacy-aware, OpenAI-compatible LLM gateway. It decides, per request, whether a
+prompt may go to a cloud LLM or must stay on your own hardware.
+
+Cloud models are often better and cheaper to run than local ones, but much of what people
+paste into a chat should never leave the organisation: customer records, passwords and API
+keys, contracts, internal documents, source code. Users don't reliably make that call
+themselves. privacy-llm-gateway makes it for them: every app talks to one endpoint, and
+every request is **checked on this machine** before anything leaves it.
+
+## What the privacy check looks for
+
+Each request with model `auto` goes through two checks, both running locally:
+
+1. **Detectors** (fast, rule-based) look for content that should never go to a public LLM:
+    - personal data: e-mail addresses, phone numbers, IBANs, credit card numbers (Luhn-checked),
+      Dutch BSN numbers, private IP addresses;
+    - secrets: private keys, cloud and SaaS tokens (AWS, GitHub, OpenAI-style, Slack, Google,
+      Stripe), JWTs, bearer tokens, `password = ...` assignments, URLs with credentials, plus
+      [detect-secrets](https://github.com/Yelp/detect-secrets);
+    - organisation markers: your internal domains and phrases like "confidential" or
+      "internal use only";
+    - attempts to talk the classifier into calling something public.
+
+    Detectors also look inside base64 and URL-encoded text. Any hit routes the request local.
+2. **A local classifier model** reads the whole conversation (including attached PDFs and text
+   files) and scores it against categories you define in the config: by default personal data,
+   credentials, private documents, confidential business information and proprietary code.
+   The request goes public only if the model is confident it is public **and** every category
+   scores low.
+
+| Result of the check | Route |
 |---|---|
 | sensitive or uncertain | **local** model (llama.cpp / vLLM / Ollama, OpenAI-compatible) |
 | confidently public: every check agrees | **public** provider (OpenAI-compatible, e.g. OpenRouter) |
 | any failure anywhere | **local** |
 
 A failing local model returns an error to the client. **No code path retries on, or
-falls back to, the public provider.** Model `local` always goes local and skips
-classification. Clients can never choose the public provider or its model.
+falls back to, the public provider.** Once a conversation is found sensitive, it stays local
+(sticky sessions). Model `local` always goes local and skips classification. Clients can
+never choose the public provider or its model.
 
 It is a single headless Python service: no UI, no database, no admin API. One YAML
 file defines all behaviour. Observability comes from Prometheus `/metrics` and JSON logs.
 It does not use LiteLLM or any other gateway/proxy library.
+
+## Use cases
+
+- **A company chat assistant.** Staff use Open WebUI (included in the compose stack) for
+  everything. General questions get a strong cloud model; the moment someone pastes a
+  customer e-mail, an HR case or a contract, that conversation moves to the in-house model.
+- **Automations that handle mixed data.** n8n flows, scripts or ticket bots send summaries,
+  translations and classifications through one endpoint. Tickets that contain personal data
+  or credentials are processed locally; the rest use the cheaper or better cloud model.
+- **Developer tools and coding assistants.** Generic programming questions go to the cloud;
+  prompts with internal code, config files, hostnames or a leaked API key stay local.
+- **Regulated work (GDPR, healthcare, legal, finance).** Use cloud LLMs where that is allowed,
+  with a technical guarantee, not just a policy, that personal data is not sent to them, and
+  metrics that show how much traffic went where.
+- **Getting the most out of a small local GPU.** Send only what has to stay private to the
+  local model, and let the cloud handle the rest.
 
 ---
 
@@ -35,14 +82,15 @@ It does not use LiteLLM or any other gateway/proxy library.
 - [Troubleshooting](#troubleshooting)
 - [Limits and non-goals](#limits-and-non-goals)
 - [Opaque reasoning](#opaque-reasoning)
-- [Design decisions not fixed by the spec](#design-decisions-not-fixed-by-the-spec)
+- [Security model](#security-model)
+- [Design decisions](#design-decisions)
 
 ---
 
 ## Architecture
 
 ```
-                         ┌──────────────────────────── privacy-gateway ─────────────────────────────┐
+                         ┌────────────────────────── privacy-llm-gateway ───────────────────────────┐
  apps ──Bearer key──▶ :8080  app.py ── auth.py ── documents.py ── session.py ──▶ Redis (sticky flags)
  (OpenWebUI, n8n, …)     │        │
                          │        ▼
@@ -121,8 +169,20 @@ cp config.example.yaml config.yaml
 
 Then edit `config.yaml`:
 
-- Set `upstreams.*`, `classifier`, `redis` and `auth.keys`.
-- For containers, set `server.metrics_listen: 0.0.0.0:9090`. The compose file only publishes it on 127.0.0.1.
+- Set `upstreams.*`, `classifier`, `redis` and `auth.keys`. The public upstream must use
+  `https://`; plain `http://` to the local model or classifier is only accepted for loopback,
+  private IPs and single-label hosts (see `upstreams.allow_insecure_http`).
+- For Docker Compose:
+  - `server.metrics_listen: 0.0.0.0:9090` (compose only publishes it on 127.0.0.1)
+  - `redis.url: redis://redis:6379/0` and `redis.password: "${REDIS_PASSWORD}"`
+
+For Docker Compose, also create `.env` and fill it in. Compose refuses to start while
+`REDIS_PASSWORD`, `OPENWEBUI_GATEWAY_KEY`, `WEBUI_SECRET_KEY` or `GRAFANA_ADMIN_PASSWORD`
+is empty:
+
+```bash
+cp .env.example .env
+```
 
 Create an API key for a client app and its hash for `auth.keys`:
 
@@ -130,26 +190,32 @@ Create an API key for a client app and its hash for `auth.keys`:
 python3 -c 'import secrets,hashlib;k=secrets.token_urlsafe(32);print("key:",k);print("sha256:",hashlib.sha256(k.encode()).hexdigest())'
 ```
 
-Validate the config. Secrets must be present in the environment, or as files when the config uses `{file: ...}`:
+Validate the config. Secrets must be present in the environment, or as files when the config uses `{file: ...}`.
+The `privacy-llm-gateway` command comes from installing the package (see *locally* below); in Docker, run it
+with `docker compose run --rm --no-deps gateway check-config --config /etc/privacy-llm-gateway/config.yaml`:
 
 ```bash
-LOCAL_KEY=... PUBLIC_KEY=... CLASSIFIER_KEY=... privacy-gateway check-config --config config.yaml
+LOCAL_KEY=... PUBLIC_KEY=... CLASSIFIER_KEY=... privacy-llm-gateway check-config --config config.yaml
 ```
 
-Run it with Docker:
+Run it with Docker (the keys come from `.env`):
 
 ```bash
-LOCAL_KEY=... PUBLIC_KEY=... CLASSIFIER_KEY=... docker compose up -d --build
+docker compose up -d --build
 ```
 
-Or locally (Python 3.12):
+The gateway (port 8080) and Open WebUI (port 3000) listen on 127.0.0.1 unless you set
+`BIND_ADDR` in `.env`. Put a TLS reverse proxy in front before exposing them.
+
+Or locally (Python 3.12). The lock files are resolved for linux/x86_64; if hash checking
+fails on your platform, use `pip install -e .` instead:
 
 ```bash
 pip install --require-hashes -r requirements.lock && pip install --no-deps -e .
 ```
 
 ```bash
-privacy-gateway serve --config config.yaml
+privacy-llm-gateway serve --config config.yaml
 ```
 
 Point clients at `http://<host>:8080/v1` with model `auto` (or `local`).
@@ -167,10 +233,11 @@ The fully commented reference is [`config.example.yaml`](config.example.yaml). S
 | `server.request_max_bytes` | `30000000` | Larger bodies → 413. |
 | `auth.keys[]` | — | `{id, sha256}`; `id` is the only client label in metrics/logs. |
 | `upstreams.local` | — | `base_url`, `model`, `api_key` (secret/null), `timeout_s`, `passthrough_paths` (default `[]`). |
-| `upstreams.public` | — | `base_url`, `model`, `api_key`, `timeout_s`. Host must not be in `local_hosts`. |
+| `upstreams.public` | — | `base_url` (must be `https://`), `model`, `api_key`, `timeout_s`. Host must not be in `local_hosts`. |
 | `upstreams.local_hosts` | — | Egress allowlist for the local route **and the classifier**. |
+| `upstreams.allow_insecure_http` | `false` | `true` allows plain `http://` to the public upstream and to non-private local hosts. Tests or trusted networks only. |
 | `classifier` | — | `url`, `model`, `api_key`, `timeout_s` (30), `max_state_chars` (32000). Host must be in `local_hosts`. |
-| `redis` | — | `url`, `connect_timeout_s` (0.5), `timeout_s` (0.5). |
+| `redis` | — | `url` (no credentials), `password` (secret/null), `connect_timeout_s` (0.5), `timeout_s` (0.5). |
 | `stamp.key_file` | `null` | HMAC key file (≥ 32 bytes); `null` = random per process. |
 | `policy.thresholds` | 0.80 / 0.60 / 0.30 / 0.30 | `public_min_prob`, `min_confidence`, `category_max_prob`, `manipulation_max_prob`. **Not calibrated.** |
 | `policy.session` | 86400 / `x-session-id` / true | `ttl_seconds`, `header`, `sticky_on_uncertain`. |
@@ -318,20 +385,20 @@ which would print skipped secret values, is silenced.
 - **Secrets in Docker**: pass them as environment variables, or mount files and use `{file: /run/secrets/...}`.
 - **Prometheus**: scrape `gateway:9090/metrics`. Keep it off the public network, or set `server.metrics_auth_token`.
 - **Rotating API keys**: add the new hash, reload, migrate clients, then remove the old hash and reload again.
-- **Calibrating thresholds**: `privacy-gateway calibrate --config config.yaml --input labelled.jsonl [--output scores.jsonl]`.
+- **Calibrating thresholds**: `privacy-llm-gateway calibrate --config config.yaml --input labelled.jsonl [--output scores.jsonl]`.
     - Input lines are `{"label": "public"|"sensitive", "text": "..."}` or `{"label": ..., "request": {...chat body...}}`, as in [`calibration/examples.jsonl`](calibration/examples.jsonl).
     - It prints *leaked* (sensitive → public) and *released* (public → public) for the current config and a sweep of each threshold, for the classifier alone and for the full pipeline.
     - It exits 1 if the current config leaks. `--output` writes scores only, never text.
-    - With Docker Compose, run it in the gateway container (the image has no `privacy-gateway` script; the input file is piped in):
+    - With Docker Compose, run it in the gateway container (the image has no `privacy-llm-gateway` script; the input file is piped in):
 
       ```bash
-      docker exec -i privacy-gateway-gateway-1 sh -c 'cat > /tmp/ex.jsonl && python -m privacy_gateway calibrate --config /etc/privacy-gateway/config.yaml --input /tmp/ex.jsonl' < calibration/examples.jsonl
+      docker exec -i privacy-llm-gateway-gateway-1 sh -c 'cat > /tmp/ex.jsonl && python -m privacy_llm_gateway calibrate --config /etc/privacy-llm-gateway/config.yaml --input /tmp/ex.jsonl' < calibration/examples.jsonl
       ```
 
 ### Open WebUI
 
 `docker compose up -d` also starts Open WebUI on http://localhost:3000 (`OPENWEBUI_PORT`). It reaches the
-gateway only through the **Privacy Gateway** pipe function ([`openwebui/privacy_gateway_pipe.py`](openwebui/privacy_gateway_pipe.py)).
+gateway only through the **Privacy LLM Gateway** pipe function ([`openwebui/privacy_llm_gateway_pipe.py`](openwebui/privacy_llm_gateway_pipe.py)).
 The pipe offers the models `auto` and `local`, sends each request to the gateway, and shows a status
 line above every answer built from the `x-privacy-*` response headers:
 
@@ -364,11 +431,11 @@ without a model entry are visible to admins only: to give users access, open
 
 | Service | URL | Notes |
 |---|---|---|
-| Grafana | http://localhost:3001 (`GRAFANA_PORT`) | user `admin`, password `GRAFANA_ADMIN_PASSWORD` from `.env`; the **Privacy Gateway** dashboard is the home dashboard |
+| Grafana | http://localhost:3001 (`GRAFANA_PORT`) | user `admin`, password `GRAFANA_ADMIN_PASSWORD` from `.env`; the **Privacy LLM Gateway** dashboard is the home dashboard |
 | Prometheus | http://localhost:9091 (`PROMETHEUS_PORT`) | scrapes `gateway:9090` every 15 s, 30 days retention, loads `prometheus/alerts.yml` (see *Alerts*) |
 
 Everything is provisioned from files: the datasource from `grafana/provisioning/datasources/`, and the dashboard
-from `grafana/dashboards/privacy-gateway.json`, which `python3 grafana/build_dashboard.py` regenerates.
+from `grafana/dashboards/privacy-llm-gateway.json`, which `python3 grafana/build_dashboard.py` regenerates.
 The dashboard is read-only in the UI; change the generator instead. Grafana telemetry, update checks,
 the news feed and plugin pre-installs are off. There is no Alertmanager: alerts are visible in the
 Prometheus UI under *Alerts*.
@@ -396,7 +463,7 @@ uv venv -p 3.12 .venv && uv pip install --python .venv -r requirements-test.lock
 ```
 
 ```bash
-.venv/bin/pytest tests/unit/test_decision.py --cov=privacy_gateway.decision --cov-branch --cov-report=term-missing
+.venv/bin/pytest tests/unit/test_decision.py --cov=privacy_llm_gateway.decision --cov-branch --cov-report=term-missing
 ```
 
 Integration (Docker Compose profile `test`):
@@ -468,7 +535,7 @@ whole conversation to the classifier again.
 
 ## Limits and non-goals
 
-- **Thresholds are not calibrated.** The defaults come from the spec. Against a POC Clef-Flash (Q8_0) on the 63 bundled examples, the current config leaked 0 of 32 sensitive examples and released 31 of 31 public ones. That set is small and synthetic; calibrate on labelled samples of your own traffic.
+- **Thresholds are not calibrated.** The defaults are conservative starting values. Against a Q8_0-quantised classifier model on 63 of the bundled examples (32 sensitive / 31 public; the set now has 76), the current config leaked 0 sensitive examples and released all 31 public ones. That set is small and synthetic; calibrate on labelled samples of your own traffic.
 - Classification is text-only. Images, audio, non-document files and token-id prompts are never sent public (`unsupported:*`). There is no OCR.
 - Detectors are pattern-based and aggressive. They cannot recognise every kind of sensitive content; that is the classifier's job. The classifier is a probabilistic model, so the thresholds and sticky sessions bias every doubt towards local.
 - The classifier needs the whole state in its context window. Larger requests are never truncated; they go local (unless the [prefix cache](#prefix-cache) can classify only the new messages).
@@ -495,9 +562,16 @@ unclassified would let a client hide data in that field. Readable reasoning (`re
 Effect on clients: providers accept requests without the blob and reason from scratch. OpenAI
 models (the configured `openai/gpt-5-mini`) work unchanged. **Anthropic models with tools**
 require the signed thinking blocks during a tool-calling loop, so tool loops with an Anthropic
-public model would fail. See [ISSUE.md](ISSUE.md).
+public model would fail. A possible fix is to let a blob through only when the gateway itself
+relayed it from the public provider earlier in the session (tracked in the GitHub issues).
 
-## Design decisions not fixed by the spec
+## Security model
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability, what the gateway
+guarantees, what you must provide (a trusted path to the local model and classifier,
+TLS in front of the gateway, secrets in `.env`) and the known limits.
+
+## Design decisions
 
 These were chosen while building and can be changed:
 

@@ -9,8 +9,8 @@ import httpx
 import pytest
 import respx
 
-from privacy_gateway import metrics
-from privacy_gateway.upstream import EgressBlocked, UpstreamFailure, Upstreams, make_stamp
+from privacy_llm_gateway import metrics
+from privacy_llm_gateway.upstream import EgressBlocked, UpstreamFailure, Upstreams, make_stamp
 
 KEY = secrets.token_bytes(32)
 PUB = "https://openrouter.ai/api/v1/chat/completions"
@@ -159,7 +159,7 @@ def _imported_modules(tree: ast.AST) -> set[str]:
 
 def test_only_upstream_and_classifier_create_http_clients():
     """No module other than upstream.py and classifier.py may import an HTTP client library."""
-    pkg = Path(__file__).resolve().parents[2] / "privacy_gateway"
+    pkg = Path(__file__).resolve().parents[2] / "privacy_llm_gateway"
     offenders = []
     for path in sorted(pkg.glob("*.py")):
         if path.name in ("upstream.py", "classifier.py"):

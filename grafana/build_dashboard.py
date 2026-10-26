@@ -1,4 +1,4 @@
-"""Generate grafana/dashboards/privacy-gateway.json (run: python3 grafana/build_dashboard.py)."""
+"""Generate grafana/dashboards/privacy-llm-gateway.json (run: python3 grafana/build_dashboard.py)."""
 
 from __future__ import annotations
 
@@ -224,10 +224,10 @@ place({"type": "table", "title": "Active config & build",
 _y = y + 8
 
 dashboard = {
-    "uid": "privacy-gateway",
-    "title": "Privacy Gateway",
-    "description": "Routing, classifier, upstream and egress health of privacy-gateway. Content-free metrics only.",
-    "tags": ["privacy-gateway", "llm"],
+    "uid": "privacy-llm-gateway",
+    "title": "Privacy LLM Gateway",
+    "description": "Routing, classifier, upstream and egress health of privacy-llm-gateway. Content-free metrics only.",
+    "tags": ["privacy-llm-gateway", "llm"],
     "timezone": "browser",
     "editable": False,
     "graphTooltip": 1,
@@ -250,6 +250,6 @@ dashboard = {
     "panels": panels,
 }
 
-out = Path(__file__).resolve().parent / "dashboards" / "privacy-gateway.json"
+out = Path(__file__).resolve().parent / "dashboards" / "privacy-llm-gateway.json"
 out.write_text(json.dumps(dashboard, indent=2) + "\n")
 print(f"wrote {out} ({len([p for p in panels if p['type'] != 'row'])} panels)")

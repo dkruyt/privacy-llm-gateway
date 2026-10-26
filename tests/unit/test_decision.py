@@ -4,8 +4,8 @@ import itertools
 
 import pytest
 
-from privacy_gateway.config import Thresholds
-from privacy_gateway.decision import ClassifierResult, Decision, decide, forced_local
+from privacy_llm_gateway.config import Thresholds
+from privacy_llm_gateway.decision import ClassifierResult, Decision, decide, forced_local
 
 T = Thresholds(public_min_prob=0.8, min_confidence=0.6, category_max_prob=0.3, manipulation_max_prob=0.3)
 CATS = ["personal_data", "credentials_secrets"]

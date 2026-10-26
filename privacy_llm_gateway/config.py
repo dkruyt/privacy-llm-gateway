@@ -13,6 +13,7 @@ Secrets are never written in the YAML. A secret field accepts only
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import logging
 import os
 import re
@@ -33,7 +34,7 @@ from pydantic import (
     model_validator,
 )
 
-DEFAULT_CONFIG_PATH = "/etc/privacy-gateway/config.yaml"
+DEFAULT_CONFIG_PATH = "/etc/privacy-llm-gateway/config.yaml"
 
 PUBLIC = "public"
 UNCERTAIN = "uncertain"
@@ -109,6 +110,32 @@ def _check_http_url(url: str) -> str:
     if parts.username or parts.password:
         raise ValueError("credentials in URLs are not allowed; use api_key")
     return url
+
+
+def _private_host(host: str) -> bool:
+    """Loopback, host.docker.internal, a private/link-local IP, or a single-label
+    name (a compose service or LAN host): hosts that plain HTTP may reach without
+    upstreams.allow_insecure_http."""
+    if host in ("localhost", "host.docker.internal") or "." not in host.strip("[]"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
+def _check_transport(name: str, url: str, public: bool, allow_insecure: bool) -> None:
+    parts = urlsplit(url)
+    if parts.scheme == "https" or allow_insecure:
+        return
+    if public:
+        raise ValueError(f"{name} must use https:// (or set upstreams.allow_insecure_http)")
+    if not _private_host(parts.hostname or ""):
+        raise ValueError(
+            f"{name} uses plain http:// to a non-private host; use https:// "
+            "(or set upstreams.allow_insecure_http)"
+        )
 
 
 # --------------------------------------------------------------------------- schema
@@ -192,6 +219,9 @@ class UpstreamsConfig(_Model):
     local: LocalUpstreamConfig
     public: UpstreamConfig
     local_hosts: list[str] = Field(min_length=1)
+    # Allow plain http:// to the public upstream and to non-private local hosts.
+    # Only for tests or a fully trusted network: keys and prompts travel unencrypted.
+    allow_insecure_http: bool = False
 
     @field_validator("local_hosts")
     @classmethod
@@ -204,6 +234,8 @@ class UpstreamsConfig(_Model):
             raise ValueError("upstreams.local.base_url host must be listed in upstreams.local_hosts")
         if _url_host(self.public.base_url) in self.local_hosts:
             raise ValueError("upstreams.public.base_url host must not be a local host")
+        _check_transport("upstreams.public.base_url", self.public.base_url, True, self.allow_insecure_http)
+        _check_transport("upstreams.local.base_url", self.local.base_url, False, self.allow_insecure_http)
         return self
 
 
@@ -222,14 +254,18 @@ class ClassifierConfig(_Model):
 
 class RedisConfig(_Model):
     url: str = "redis://127.0.0.1:6379/0"
+    password: Secret = None
     connect_timeout_s: float = Field(0.5, gt=0, le=10)
     timeout_s: float = Field(0.5, gt=0, le=10)
 
     @field_validator("url")
     @classmethod
     def _scheme(cls, v: str) -> str:
-        if urlsplit(v).scheme not in ("redis", "rediss", "unix"):
+        parts = urlsplit(v)
+        if parts.scheme not in ("redis", "rediss", "unix"):
             raise ValueError("must be a redis://, rediss:// or unix:// URL")
+        if parts.username or parts.password:
+            raise ValueError("credentials in URLs are not allowed; use redis.password")
         return v
 
 
@@ -425,6 +461,7 @@ class Config(_Model):
             raise ValueError(
                 "classifier.url host must be listed in upstreams.local_hosts (classification stays local)"
             )
+        _check_transport("classifier.url", self.classifier.url, False, self.upstreams.allow_insecure_http)
         from .detectors import ALL_STATIC_RULES
 
         allowed = set(ALL_STATIC_RULES) | {

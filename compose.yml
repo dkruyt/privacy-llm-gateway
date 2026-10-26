@@ -1,14 +1,15 @@
-# privacy-gateway
+# privacy-llm-gateway
 #
-#   Production-style:   cp config.example.yaml config.yaml   (edit; set server.metrics_listen: 0.0.0.0:9090)
-#                       printf '%s' "$LOCAL_KEY" > secrets/local_key ... (see README)
+#   Production-style:   cp config.example.yaml config.yaml   (edit for compose, see README "Quick start")
+#                       cp .env.example .env                 (fill in; compose refuses to start
+#                                                             while a required value is empty)
 #                       docker compose up -d --build
 #
 #   Integration tests:  tests/integration/run.sh
 #                       (= docker compose --profile test up ... on an internal network
 #                        with no internet access)
 
-name: privacy-gateway
+name: privacy-llm-gateway
 
 x-hardening: &hardening
   read_only: true
@@ -20,31 +21,35 @@ services:
   # ------------------------------------------------------------------ production
   redis:
     image: redis:8.10.2-alpine3.23
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-ttl"]
+    <<: *hardening
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-ttl",
+              "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"]
     networks: [backend]
     restart: unless-stopped
 
   gateway:
     build: {context: ., target: runtime}
-    image: privacy-gateway:0.1.0
+    image: privacy-llm-gateway:0.1.0
     <<: *hardening
     depends_on: [redis]
-    networks: [backend]
+    networks: [backend, frontend]
     ports:
-      - "${GATEWAY_PORT:-8080}:8080"
+      - "${BIND_ADDR:-127.0.0.1}:${GATEWAY_PORT:-8080}:8080"
       - "127.0.0.1:9090:9090"      # /metrics: localhost only
     extra_hosts: ["host.docker.internal:host-gateway"]   # local model server on the host
     environment:
       LOCAL_KEY: ${LOCAL_KEY:-}
       PUBLIC_KEY: ${PUBLIC_KEY:-}
       CLASSIFIER_KEY: ${CLASSIFIER_KEY:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
     volumes:
-      - ./config.yaml:/etc/privacy-gateway/config.yaml:ro
+      - ./config.yaml:/etc/privacy-llm-gateway/config.yaml:ro
     stop_signal: SIGTERM
     restart: unless-stopped
 
-  # Open WebUI, wired to the gateway only, through the "Privacy Gateway" pipe function
-  # (openwebui/privacy_gateway_pipe.py; install it with openwebui/install.py). The pipe
+  # Open WebUI, wired to the gateway only, through the "Privacy LLM Gateway" pipe function
+  # (openwebui/privacy_llm_gateway_pipe.py; install it with openwebui/install.py). The pipe
   # offers "auto" and "local" and shows per answer whether the local or public model
   # handled it. Needs an auth.keys entry {id: openwebui, sha256: <sha256 of
   # OPENWEBUI_GATEWAY_KEY>} in config.yaml. The settings below only apply to a fresh
@@ -52,17 +57,17 @@ services:
   openwebui:
     image: ghcr.io/open-webui/open-webui:v0.12.3
     depends_on: [gateway]
-    networks: [backend]
+    networks: [frontend]      # reaches the gateway only, not Redis or the metrics listener
     ports:
-      - "${OPENWEBUI_PORT:-3000}:8080"
+      - "${BIND_ADDR:-127.0.0.1}:${OPENWEBUI_PORT:-3000}:8080"
     environment:
       PRIVACY_GATEWAY_URL: http://gateway:8080/v1    # read by the pipe function
-      PRIVACY_GATEWAY_KEY: ${OPENWEBUI_GATEWAY_KEY:-}
+      PRIVACY_GATEWAY_KEY: ${OPENWEBUI_GATEWAY_KEY:?set OPENWEBUI_GATEWAY_KEY in .env}
       ENABLE_OPENAI_API: "false"           # models come from the pipe, not a direct connection
       ENABLE_OLLAMA_API: "false"           # no direct model connections that bypass the gateway
       DEFAULT_MODELS: privacy_gateway.auto
       TASK_MODEL_EXTERNAL: privacy_gateway.local   # titles/tags/follow-ups: always on the local model
-      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-}
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY in .env}
       ANONYMIZED_TELEMETRY: "false"
       DO_NOT_TRACK: "true"
       SCARF_NO_ANALYTICS: "true"
@@ -71,7 +76,7 @@ services:
     restart: unless-stopped
 
   # Monitoring: Prometheus scrapes the gateway, Grafana shows the provisioned
-  # "Privacy Gateway" dashboard. Both bound to localhost only.
+  # "Privacy LLM Gateway" dashboard. Both bound to localhost only.
   prometheus:
     image: prom/prometheus:v3.15.1
     depends_on: [gateway]
@@ -82,10 +87,12 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=30d
-      - --web.enable-lifecycle
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      # With server.metrics_auth_token set: write the token to prometheus/metrics_token
+      # (gitignored), uncomment this and the authorization line in prometheus.yml.
+      # - ./prometheus/metrics_token:/etc/prometheus/metrics_token:ro
       - prometheus-data:/prometheus
     restart: unless-stopped
 
@@ -97,10 +104,10 @@ services:
       - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
-      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/privacy-gateway.json
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/privacy-llm-gateway.json
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
@@ -121,7 +128,7 @@ services:
 
   mock-public:
     build: {context: ., target: test}
-    image: privacy-gateway-test:0.1.0
+    image: privacy-llm-gateway-test:0.1.0
     <<: *hardening
     profiles: [test]
     networks: [testnet]
@@ -130,7 +137,7 @@ services:
     command: ["uvicorn", "mockserver:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"]
 
   mock-local:
-    image: privacy-gateway-test:0.1.0
+    image: privacy-llm-gateway-test:0.1.0
     <<: *hardening
     profiles: [test]
     networks: [testnet]
@@ -140,7 +147,7 @@ services:
     depends_on: [mock-public]
 
   mock-classifier:
-    image: privacy-gateway-test:0.1.0
+    image: privacy-llm-gateway-test:0.1.0
     <<: *hardening
     profiles: [test]
     networks: [testnet]
@@ -150,28 +157,28 @@ services:
     depends_on: [mock-public]
 
   gateway-test:
-    image: privacy-gateway:0.1.0
+    image: privacy-llm-gateway:0.1.0
     build: {context: ., target: runtime}
     <<: *hardening
     profiles: [test]
     networks: [testnet]
     env_file: [tests/integration/test.env]
     volumes:
-      - ./tests/integration/config.yaml:/etc/privacy-gateway/config.yaml:ro
+      - ./tests/integration/config.yaml:/etc/privacy-llm-gateway/config.yaml:ro
     depends_on: [redis-test, mock-public, mock-local, mock-classifier]
 
   gateway-noredis:          # same config, Redis unreachable
-    image: privacy-gateway:0.1.0
+    image: privacy-llm-gateway:0.1.0
     <<: *hardening
     profiles: [test]
     networks: [testnet]
     env_file: [tests/integration/test.env]
     volumes:
-      - ./tests/integration/config-noredis.yaml:/etc/privacy-gateway/config.yaml:ro
+      - ./tests/integration/config-noredis.yaml:/etc/privacy-llm-gateway/config.yaml:ro
     depends_on: [gateway-test]
 
   test-runner:
-    image: privacy-gateway-test:0.1.0
+    image: privacy-llm-gateway-test:0.1.0
     <<: *hardening
     profiles: [test]
     networks: [testnet]
@@ -192,5 +199,6 @@ volumes:
 
 networks:
   backend: {}
+  frontend: {}
   testnet:
     internal: true            # no route to the internet

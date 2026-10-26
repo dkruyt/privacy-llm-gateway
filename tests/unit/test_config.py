@@ -4,7 +4,7 @@ import copy
 
 import pytest
 
-from privacy_gateway.config import ConfigError, ConfigHolder, load_config
+from privacy_llm_gateway.config import ConfigError, ConfigHolder, load_config
 
 
 def test_example_config_is_valid(example_copy, secret_env):
@@ -89,6 +89,55 @@ def test_local_upstream_must_be_local_host(cfg_dict, write_cfg):
 def test_classifier_must_be_local_host(cfg_dict, write_cfg):
     cfg_dict["classifier"]["url"] = "https://classifier.example.com/v1/systemone"
     with pytest.raises(ConfigError, match="classifier.url"):
+        load_config(write_cfg(cfg_dict))
+
+
+@pytest.mark.parametrize(
+    "path, url, match",
+    [
+        (("upstreams", "public", "base_url"), "http://openrouter.ai/api/v1", "must use https"),
+        (("upstreams", "local", "base_url"), "http://llm.example.com/v1", "non-private host"),
+        (("classifier", "url"), "http://llm.example.com/v1/systemone", "non-private host"),
+    ],
+)
+def test_plain_http_rejected(cfg_dict, write_cfg, path, url, match):
+    cfg_dict["upstreams"]["local_hosts"].append("llm.example.com")
+    section = cfg_dict
+    for k in path[:-1]:
+        section = section[k]
+    section[path[-1]] = url
+    with pytest.raises(ConfigError, match=match):
+        load_config(write_cfg(cfg_dict))
+    cfg_dict["upstreams"]["allow_insecure_http"] = True
+    load_config(write_cfg(cfg_dict))
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "host.docker.internal", "10.1.2.3", "192.168.1.5", "vllm"])
+def test_plain_http_allowed_to_private_hosts(cfg_dict, write_cfg, host):
+    cfg_dict["upstreams"]["local_hosts"].append(host)
+    cfg_dict["upstreams"]["local"]["base_url"] = f"http://{host}:8000/v1"
+    cfg_dict["classifier"]["url"] = f"http://{host}:8081/v1/systemone"
+    load_config(write_cfg(cfg_dict))
+
+
+def test_https_local_to_public_dns_name(cfg_dict, write_cfg):
+    cfg_dict["upstreams"]["local_hosts"].append("llm.example.com")
+    cfg_dict["upstreams"]["local"]["base_url"] = "https://llm.example.com/v1"
+    load_config(write_cfg(cfg_dict))
+
+
+def test_redis_password_is_a_secret(cfg_dict, write_cfg, monkeypatch):
+    monkeypatch.setenv("REDIS_PASSWORD", "pw-from-env")
+    cfg_dict.setdefault("redis", {})["password"] = "${REDIS_PASSWORD}"
+    assert load_config(write_cfg(cfg_dict)).config.redis.password == "pw-from-env"
+    cfg_dict["redis"]["password"] = "inline-pw"
+    with pytest.raises(ConfigError):
+        load_config(write_cfg(cfg_dict))
+
+
+def test_redis_url_credentials_rejected(cfg_dict, write_cfg):
+    cfg_dict.setdefault("redis", {})["url"] = "redis://:pw@127.0.0.1:6379/0"
+    with pytest.raises(ConfigError, match="redis.password"):
         load_config(write_cfg(cfg_dict))
 
 
@@ -189,7 +238,7 @@ def test_reload_build_failure_keeps_old(cfg_dict, write_cfg):
 
 
 def test_prefix_cache_defaults_and_bounds(cfg_dict, write_cfg):
-    from privacy_gateway.config import ConfigError, load_config
+    from privacy_llm_gateway.config import ConfigError, load_config
 
     pc = load_config(write_cfg(cfg_dict)).config.policy.session.prefix_cache
     assert (pc.enabled, pc.borderline_margin, pc.ttl_seconds) == (False, 0.10, 86_400)

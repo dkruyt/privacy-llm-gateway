@@ -22,9 +22,10 @@ upstreams:
     api_key: "${PUBLIC_KEY}"
     timeout_s: 10
   local_hosts: [mock-local, mock-classifier]
+  allow_insecure_http: true    # mock upstreams on an internal test network
 classifier:
   url: http://mock-classifier:8000/v1/systemone
-  model: clef-flash
+  model: classifier-model
   api_key: "${CLASSIFIER_KEY}"
   timeout_s: 2
   max_state_chars: 20000

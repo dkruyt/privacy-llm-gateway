@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from privacy_gateway.extract import extract, normalize
+from privacy_llm_gateway.extract import extract, normalize
 
 H = "x-session-id"
 

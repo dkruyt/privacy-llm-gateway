@@ -5,7 +5,7 @@ import json
 
 import respx
 
-from privacy_gateway.calibrate import _load, report, run, score_all
+from privacy_llm_gateway.calibrate import _load, report, run, score_all
 from tests.unit.test_classifier import good_response
 
 
@@ -51,7 +51,7 @@ def test_bad_input_exit_2(loaded, tmp_path):
 
 
 def test_body_strips_opaque_reasoning_like_a_live_request():
-    from privacy_gateway.calibrate import _body
+    from privacy_llm_gateway.calibrate import _body
 
     row = {"label": "public", "request": {"messages": [
         {"role": "assistant", "content": "x", "reasoning_details": [{"type": "reasoning.encrypted", "data": "blob"}]},

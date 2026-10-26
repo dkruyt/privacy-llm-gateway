@@ -3,9 +3,22 @@ requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "privacy-gateway"
+name = "privacy-llm-gateway"
 version = "0.1.0"
 description = "Privacy-aware OpenAI-compatible LLM gateway: classify locally, route sensitive traffic to a local model"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{name = "Dennis Kruyt"}]
+keywords = ["llm", "privacy", "gateway", "openai", "proxy", "classification", "local-llm"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: FastAPI",
+  "Intended Audience :: System Administrators",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Topic :: Internet :: Proxy Servers",
+]
 requires-python = "==3.12.*"
 # Direct dependencies, pinned exactly. Transitive pins (with hashes) are in
 # requirements.lock / requirements-test.lock (uv pip compile --generate-hashes).
@@ -29,11 +42,15 @@ test = [
   "pytest-cov==7.1.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/dkruyt/privacy-llm-gateway"
+Issues = "https://github.com/dkruyt/privacy-llm-gateway/issues"
+
 [project.scripts]
-privacy-gateway = "privacy_gateway.__main__:main"
+privacy-llm-gateway = "privacy_llm_gateway.__main__:main"
 
 [tool.setuptools]
-packages = ["privacy_gateway"]
+packages = ["privacy_llm_gateway"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

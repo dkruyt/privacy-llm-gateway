@@ -1,4 +1,4 @@
-"""Classifier client: a TypeSafe-compatible decision model (e.g. Cloudflare Clef) at POST /v1/systemone.
+"""Classifier client: a local decision model served with a POST /v1/systemone API.
 
 Builds the question set from the policy, sends the complete request state and
 validates the response strictly. Any deviation raises ClassifierError(code); the

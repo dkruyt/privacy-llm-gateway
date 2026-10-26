@@ -1,5 +1,5 @@
 """
-title: Privacy Gateway
+title: Privacy LLM Gateway
 description: Models "auto" and "local" through the privacy gateway. Shows above every answer whether it was handled by the local or the public model.
 version: 0.1.0
 license: MIT
@@ -35,7 +35,8 @@ class Pipe:
         )
         GATEWAY_API_KEY: str = Field(
             default="",
-            description="Gateway bearer key. Empty: env PRIVACY_GATEWAY_KEY.",
+            description="Gateway bearer key. Empty: env PRIVACY_GATEWAY_KEY (preferred: not stored in the database).",
+            json_schema_extra={"input": {"type": "password"}},
         )
         SHOW_REASONS: bool = Field(
             default=True,

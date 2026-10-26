@@ -6,14 +6,14 @@ import httpx
 import pytest
 import respx
 
-from privacy_gateway import metrics
-from privacy_gateway.classifier import ClassifierClient
-from privacy_gateway.config import RedisConfig, Thresholds
-from privacy_gateway.decision import ClassifierResult
-from privacy_gateway.detectors import Detectors
-from privacy_gateway.pipeline import PrefixContext, evaluate
-from privacy_gateway.prefix_cache import KEY_PREFIX, chain, clearly_public, fingerprint
-from privacy_gateway.session import SessionStore
+from privacy_llm_gateway import metrics
+from privacy_llm_gateway.classifier import ClassifierClient
+from privacy_llm_gateway.config import RedisConfig, Thresholds
+from privacy_llm_gateway.decision import ClassifierResult
+from privacy_llm_gateway.detectors import Detectors
+from privacy_llm_gateway.pipeline import PrefixContext, evaluate
+from privacy_llm_gateway.prefix_cache import KEY_PREFIX, chain, clearly_public, fingerprint
+from privacy_llm_gateway.session import SessionStore
 from tests.fakes import FakeRedis
 from tests.unit.test_classifier import good_response
 

@@ -1,9 +1,9 @@
-# privacy-gateway configuration
+# privacy-llm-gateway configuration
 # =============================================================================
 # One file drives everything. It is validated in full at startup (unknown keys
 # are rejected); any error prints the field path and the process exits non-zero.
 #
-#   privacy-gateway check-config --config /etc/privacy-gateway/config.yaml
+#   privacy-llm-gateway check-config --config /etc/privacy-llm-gateway/config.yaml
 #
 # Reload: send SIGHUP. The new file is validated in full and swapped atomically;
 # if it is invalid the running config stays in place (log event config_reload
@@ -24,7 +24,7 @@ server:
   # Separate listener for GET /metrics (Prometheus). Not served on the API port.
   # Binds to localhost by default, so no auth is needed. Restart required.
   metrics_listen: 127.0.0.1:9090
-  # Optional bearer token for /metrics (secret reference or null).
+  # Optional bearer token for /metrics (secret reference or null), e.g. "${METRICS_TOKEN}".
   metrics_auth_token: null
   # Worker processes. >1 requires stamp.key_file and uses Prometheus
   # multiprocess mode. Restart required.
@@ -63,13 +63,18 @@ upstreams:
   # Egress guard allowlist: the local route (and the classifier) may only connect to these
   # hosts. The public upstream host must NOT be listed here.
   local_hosts: [127.0.0.1, localhost, host.docker.internal]
+  # The public upstream must use https://. Local and classifier URLs may use plain
+  # http:// only to loopback, host.docker.internal, private IPs or single-label names
+  # (compose services); anything else needs https://. true lifts both checks: only for
+  # tests or a fully trusted network, since keys and prompts then travel unencrypted.
+  allow_insecure_http: false
 
-# Classifier: a decision model (e.g. Cloudflare Clef-Flash GGUF) served by
-# llama.cpp with the TypeSafe-compatible POST /v1/systemone API. Its host must be
-# in upstreams.local_hosts: classification never leaves this machine/network.
+# Classifier: a local decision model (e.g. a GGUF served by llama.cpp) exposing the
+# POST /v1/systemone API. Its host must be in upstreams.local_hosts:
+# classification never leaves this machine/network.
 classifier:
   url: http://127.0.0.1:8081/v1/systemone
-  model: clef-flash
+  model: classifier-model
   api_key: "${CLASSIFIER_KEY}"    # or null
   timeout_s: 30
   # Requests whose compact-JSON state exceeds this are NOT classified (never
@@ -77,8 +82,10 @@ classifier:
   max_state_chars: 32000
 
 # Sticky sessions. Redis unreachable → requests go local (session_store_unavailable).
+# Compose: url: redis://redis:6379/0 and password: "${REDIS_PASSWORD}".
 redis:
   url: redis://127.0.0.1:6379/3
+  password: null                  # secret reference or null; credentials in the URL are rejected
   connect_timeout_s: 0.5
   timeout_s: 0.5
 
@@ -88,7 +95,7 @@ stamp:
   key_file: null
 
 policy:
-  # NOT calibrated. Tune with `privacy-gateway calibrate` and the
+  # NOT calibrated. Tune with `privacy-llm-gateway calibrate` and the
   # privacy_classifier_* histograms from real traffic.
   thresholds:
     public_min_prob: 0.80         # p(verdict=public) must be >= this

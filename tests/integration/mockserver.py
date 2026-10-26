@@ -108,7 +108,7 @@ def _answers(choice: str, p_choice: float = 0.95, confidence: float = 0.9, cats=
 if ROLE == "classifier":
 
     @app.post("/v1/systemone")
-    async def systemone(req: Request):
+    async def classify(req: Request):
         state["arrivals"].append(time.time())
         state["count"] += 1
         raw = await req.body()

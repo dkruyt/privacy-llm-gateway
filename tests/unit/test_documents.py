@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-from privacy_gateway.config import DocumentPolicy
-from privacy_gateway.documents import DocumentRejected, convert
+from privacy_llm_gateway.config import DocumentPolicy
+from privacy_llm_gateway.documents import DocumentRejected, convert
 from tests.pdfs import blank_pdf, broken_pdf, data_url, docx_bytes, encrypted_pdf, text_pdf
 
 POLICY = DocumentPolicy()

@@ -1,8 +1,8 @@
-# Prometheus alert rules for privacy-gateway.
-#   rule_files: [/etc/prometheus/rules/privacy-gateway-alerts.yml]
+# Prometheus alert rules for privacy-llm-gateway.
+#   rule_files: [/etc/prometheus/rules/privacy-llm-gateway-alerts.yml]
 # Validate: promtool check rules prometheus/alerts.yml
 groups:
-  - name: privacy-gateway
+  - name: privacy-llm-gateway
     rules:
       # The egress guard refused an outbound call. This should never happen: it means a
       # code path tried to send a body to the public provider that was not stamped by
@@ -11,7 +11,7 @@ groups:
         expr: sum by (instance) (privacy_egress_total{result="blocked"}) > 0
         labels: {severity: critical}
         annotations:
-          summary: "privacy-gateway egress guard blocked an outbound call on {{ $labels.instance }}"
+          summary: "privacy-llm-gateway egress guard blocked an outbound call on {{ $labels.instance }}"
           description: "privacy_egress_total{result=\"blocked\"} > 0. Check logs for event=blocked_external_call."
 
       # Classifier failing: everything is routed local (safe, but the local model takes all load).
@@ -31,7 +31,7 @@ groups:
         for: 2m
         labels: {severity: warning}
         annotations:
-          summary: "privacy-gateway cannot reach Redis on {{ $labels.instance }}"
+          summary: "privacy-llm-gateway cannot reach Redis on {{ $labels.instance }}"
           description: "All auto requests are routed local with reason session_store_unavailable."
 
       # Public share dropped to 0 while there is auto traffic and there was public traffic
@@ -61,4 +61,4 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: "A SIGHUP config reload was rejected on {{ $labels.instance }}"
-          description: "The previous config is still active. Run privacy-gateway check-config."
+          description: "The previous config is still active. Run privacy-llm-gateway check-config."

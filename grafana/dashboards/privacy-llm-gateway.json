@@ -1,9 +1,9 @@
 {
-  "uid": "privacy-gateway",
-  "title": "Privacy Gateway",
-  "description": "Routing, classifier, upstream and egress health of privacy-gateway. Content-free metrics only.",
+  "uid": "privacy-llm-gateway",
+  "title": "Privacy LLM Gateway",
+  "description": "Routing, classifier, upstream and egress health of privacy-llm-gateway. Content-free metrics only.",
   "tags": [
-    "privacy-gateway",
+    "privacy-llm-gateway",
     "llm"
   ],
   "timezone": "browser",

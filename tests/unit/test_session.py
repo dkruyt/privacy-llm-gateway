@@ -4,8 +4,8 @@ import hashlib
 
 import pytest
 
-from privacy_gateway.config import RedisConfig
-from privacy_gateway.session import SessionStore, SessionStoreUnavailable, session_key, short_id
+from privacy_llm_gateway.config import RedisConfig
+from privacy_llm_gateway.session import SessionStore, SessionStoreUnavailable, session_key, short_id
 from tests.fakes import FakeRedis
 
 
@@ -83,3 +83,9 @@ async def test_real_client_unreachable_fails_fast():
     assert time.monotonic() - t0 < 2
     assert await s.mark_sensitive("privacy:sess:x") is False
     await s.aclose()
+
+
+def test_password_passed_to_client(monkeypatch):
+    monkeypatch.setenv("REDIS_PASSWORD", "pw")
+    s = SessionStore(RedisConfig(password="${REDIS_PASSWORD}"), 60)
+    assert s._redis.connection_pool.connection_kwargs["password"] == "pw"

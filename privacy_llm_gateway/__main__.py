@@ -1,4 +1,4 @@
-"""CLI: privacy-gateway serve | check-config | calibrate  [--config PATH]
+"""CLI: privacy-llm-gateway serve | check-config | calibrate  [--config PATH]
 
 serve         run the API (server.listen) and /metrics (server.metrics_listen)
 check-config  validate the config (incl. secrets) and exit 0, or print errors and exit 2
@@ -190,7 +190,7 @@ async def _parent_main(loaded: LoadedConfig, path: str, children: list[int]) -> 
 def _prepare_multiprocess_dir() -> None:
     d = os.environ.get("PROMETHEUS_MULTIPROC_DIR")
     if not d:
-        d = tempfile.mkdtemp(prefix="privacy-gateway-prom-")
+        d = tempfile.mkdtemp(prefix="privacy-llm-gateway-prom-")
         os.environ["PROMETHEUS_MULTIPROC_DIR"] = d
     os.makedirs(d, exist_ok=True)
     for name in os.listdir(d):
@@ -202,7 +202,7 @@ def _prepare_multiprocess_dir() -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="privacy-gateway", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="privacy-llm-gateway", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="cmd")
     for name in ("serve", "check-config", "calibrate"):
         p = sub.add_parser(name)

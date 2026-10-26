@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from privacy_gateway.schemas import strip_opaque_reasoning
+from privacy_llm_gateway.schemas import strip_opaque_reasoning
 
 SUMMARY = {"type": "reasoning.summary", "summary": "Picked a fun fact.", "format": "openai-responses-v1", "index": 0}
 ENCRYPTED = {"type": "reasoning.encrypted", "data": "gAAAAB" + "x" * 64, "format": "openai-responses-v1", "index": 1}

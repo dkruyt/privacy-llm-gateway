@@ -7,8 +7,8 @@ import logging
 import httpx
 import pytest
 
-from privacy_gateway import metrics
-from privacy_gateway.app import create_app, make_holder
+from privacy_llm_gateway import metrics
+from privacy_llm_gateway.app import create_app, make_holder
 from tests.conftest import TEST_KEY, TEST_KEY2
 from tests.fakes import FakeRedis
 from tests.pdfs import data_url, docx_bytes, text_pdf
@@ -196,7 +196,7 @@ async def test_redis_down_routes_local(client, mocks):
 
 
 async def test_pipeline_exception_routes_local(client, mocks, monkeypatch):
-    import privacy_gateway.app as appmod
+    import privacy_llm_gateway.app as appmod
 
     async def boom(**_):
         raise RuntimeError("SECRET-IN-EXCEPTION")
@@ -262,7 +262,7 @@ async def test_other_endpoints(client, mocks, holder, loaded):
 
 
 async def test_passthrough_when_configured(loaded, mocks, write_cfg, cfg_dict):
-    from privacy_gateway.config import load_config
+    from privacy_llm_gateway.config import load_config
 
     cfg_dict["upstreams"]["local"]["passthrough_paths"] = ["/embeddings"]
     lc = load_config(write_cfg(cfg_dict))
@@ -330,7 +330,7 @@ async def test_completions_endpoint(client, mocks):
 
 
 async def test_logs_are_content_free(client, mocks, caplog):
-    from privacy_gateway.logs import JsonFormatter
+    from privacy_llm_gateway.logs import JsonFormatter
 
     caplog.set_level(logging.DEBUG)
     secret = "SECRET-PLANTED-" + base64.b16encode(b"x").decode()
@@ -381,7 +381,7 @@ async def test_readable_reasoning_is_still_classified(client, mocks):
 
 @pytest.fixture
 async def prefix_client(cfg_dict, write_cfg, mocks):
-    from privacy_gateway.config import load_config
+    from privacy_llm_gateway.config import load_config
 
     cfg_dict["policy"]["session"]["prefix_cache"] = {"enabled": True}
     holder = make_holder(load_config(write_cfg(cfg_dict)), transports=mocks.transports(), redis_client=mocks.redis)

@@ -8,10 +8,10 @@ rule_files:
   - /etc/prometheus/alerts.yml
 
 scrape_configs:
-  - job_name: privacy-gateway
+  - job_name: privacy-llm-gateway
     metrics_path: /metrics
     static_configs:
       - targets: ["gateway:9090"]
-        labels: {instance: privacy-gateway}
-    # If server.metrics_auth_token is set, add:
+        labels: {instance: privacy-llm-gateway}
+    # If server.metrics_auth_token is set, uncomment (and the volume in compose.yml):
     # authorization: {credentials_file: /etc/prometheus/metrics_token}

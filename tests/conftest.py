@@ -47,7 +47,7 @@ def write_cfg(tmp_path, secret_env):
 
 @pytest.fixture
 def loaded(cfg_dict, write_cfg):
-    from privacy_gateway.config import load_config
+    from privacy_llm_gateway.config import load_config
 
     return load_config(write_cfg(cfg_dict))
 
