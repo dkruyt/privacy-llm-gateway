@@ -1,2 +1,0 @@
-[console_scripts]
-privacy-gateway = privacy_gateway.__main__:main
