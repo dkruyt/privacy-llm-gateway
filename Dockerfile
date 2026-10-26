@@ -3,7 +3,7 @@
 #   docker build -t privacy-llm-gateway:0.1.0 .
 #   docker run --read-only --tmpfs /tmp -v ./config.yaml:/etc/privacy-llm-gateway/config.yaml:ro ...
 
-FROM python:3.12.14-slim-trixie AS base
+FROM python:3.15.0-slim-trixie AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
