@@ -89,25 +89,45 @@ It does not use LiteLLM or any other gateway/proxy library.
 
 ## Architecture
 
-```
-                         ┌────────────────────────── privacy-llm-gateway ───────────────────────────┐
- apps ──Bearer key──▶ :8080  app.py ── auth.py ── documents.py ── session.py ──▶ Redis (sticky flags)
- (OpenWebUI, n8n, …)     │        │
-                         │        ▼
-                         │   pipeline.py:  extract.py → detectors.py ─(hit)──────────┐
-                         │                       │                                   │
-                         │                       └─(no hit)─▶ classifier.py ─▶ /v1/systemone (local)
-                         │                                       │                   │
-                         │                                       ▼                   ▼
-                         │                              decision.py  decide() → Decision(route, verdict, reasons, sticky)
-                         │                                       │
-                         │                                       ▼
-                         │   upstream.py  (the ONLY module that calls model servers: egress guard)
-                         │        ├── local  client ─▶ host ∈ upstreams.local_hosts ─▶ local model
-                         │        └── public client ─▶ HMAC stamp re-verified ───────▶ public provider
-                         │
-  Prometheus ─────▶ :9090 /metrics (separate listener, localhost by default)
-                         └────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    apps["Apps<br/>Open WebUI, n8n, scripts"]
+    prom["Prometheus"]
+
+    subgraph gw["privacy-llm-gateway"]
+        direction TB
+        api["app.py :8080<br/>auth.py · documents.py"]
+        session["session.py<br/>sticky sessions"]
+        subgraph pipe["pipeline.py"]
+            direction TB
+            extract["extract.py<br/>normalised state"]
+            detect["detectors.py<br/>rules, checksums, detect-secrets"]
+            clf["classifier.py"]
+            decide["decision.py<br/>decide()"]
+            extract --> detect
+            detect -- "no hit" --> clf
+            detect -- "hit" --> decide
+            clf --> decide
+        end
+        up["upstream.py<br/>egress guard"]
+        metrics["metrics.py :9090<br/>/metrics, localhost by default"]
+
+        api --> session
+        api --> extract
+        decide --> up
+    end
+
+    redis[("Redis")]
+    clfsrv["Classifier model<br/>/v1/systemone, local"]
+    local["Local model<br/>llama.cpp, vLLM, Ollama"]
+    public["Public provider<br/>e.g. OpenRouter"]
+
+    apps -- "Bearer key" --> api
+    session <--> redis
+    clf --> clfsrv
+    up -- "host in upstreams.local_hosts" --> local
+    up -- "HMAC stamp re-verified" --> public
+    prom --> metrics
 ```
 
 | Module | Responsibility |

@@ -14,5 +14,4 @@ secrets/
 build/
 dist/
 promo/
-ISSUE.md
 prometheus/metrics_token
