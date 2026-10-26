@@ -4,10 +4,10 @@ Issues and pull requests are welcome. For security problems, see [SECURITY.md](S
 
 ## Setup
 
-Python 3.12:
+Python 3.14:
 
 ```bash
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 .venv/bin/pip install -e '.[test]'
 ```
 

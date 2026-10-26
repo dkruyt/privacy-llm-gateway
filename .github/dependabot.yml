@@ -6,6 +6,11 @@ updates:
   - package-ecosystem: docker
     directory: /
     schedule: {interval: weekly}
+    ignore:
+      # Python minor/major upgrades need lock files rebuilt and all wheels available;
+      # do those by hand. Patch releases (3.14.x) still come through.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   - package-ecosystem: github-actions
     directory: /
     schedule: {interval: weekly}

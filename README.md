@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/dkruyt/privacy-llm-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/dkruyt/privacy-llm-gateway/actions/workflows/ci.yml)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
-![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
+![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)
 
 A privacy-aware, OpenAI-compatible LLM gateway. It decides, per request, whether a
 prompt may go to a cloud LLM or must stay on your own hardware.
@@ -242,7 +242,7 @@ docker compose up -d --build
 The gateway (port 8080) and Open WebUI (port 3000) listen on 127.0.0.1 unless you set
 `BIND_ADDR` in `.env`. Put a TLS reverse proxy in front before exposing them.
 
-Or locally (Python 3.12). The lock files are resolved for linux/x86_64; if hash checking
+Or locally (Python 3.14). The lock files are resolved for linux/x86_64; if hash checking
 fails on your platform, use `pip install -e .` instead:
 
 ```bash
@@ -490,7 +490,7 @@ Unit tests (no network) cover:
 - documents, config (including SIGHUP keeping the old config), sessions, the app, metrics label hygiene, and that no planted secret ever appears in `/metrics`
 
 ```bash
-uv venv -p 3.12 .venv && uv pip install --python .venv -r requirements-test.lock && uv pip install --python .venv --no-deps -e .
+uv venv -p 3.14 .venv && uv pip install --python .venv -r requirements-test.lock && uv pip install --python .venv --no-deps -e .
 ```
 
 ```bash
@@ -630,4 +630,4 @@ These were chosen while building and can be changed:
 10. **Pinned versions:**
     - Direct dependencies are pinned exactly in `pyproject.toml`.
     - All transitive dependencies are pinned with hashes in `requirements.lock` / `requirements-test.lock`.
-    - Images: `python:3.12.14-slim-trixie` and `redis:8.10.2-alpine3.23`.
+    - Images: `python:3.14.9-slim-trixie` and `redis:8.10.2-alpine3.23`.
