@@ -1,0 +1,287 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "privacy-llm-gateway architecture",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1370,
+      572
+    ],
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "components": [
+    {
+      "id": "apps",
+      "type": "frontend",
+      "label": "Apps",
+      "sublabel": "Open WebUI, n8n",
+      "pos": [
+        100,
+        140
+      ],
+      "size": [
+        124,
+        64
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "app.py :8080",
+      "sublabel": "auth, attachments",
+      "pos": [
+        290,
+        140
+      ],
+      "size": [
+        124,
+        64
+      ]
+    },
+    {
+      "id": "session",
+      "type": "backend",
+      "label": "session.py",
+      "sublabel": "sticky sessions",
+      "pos": [
+        290,
+        300
+      ],
+      "size": [
+        124,
+        64
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "session pins",
+      "pos": [
+        290,
+        460
+      ],
+      "size": [
+        124,
+        64
+      ]
+    },
+    {
+      "id": "detect",
+      "type": "security",
+      "label": "detectors.py",
+      "sublabel": "PII, secrets",
+      "pos": [
+        460,
+        140
+      ],
+      "size": [
+        124,
+        64
+      ]
+    },
+    {
+      "id": "clf",
+      "type": "backend",
+      "label": "classifier.py",
+      "sublabel": "builds the questions",
+      "pos": [
+        630,
+        300
+      ],
+      "size": [
+        124,
+        64
+      ]
+    },
+    {
+      "id": "clfsrv",
+      "type": "backend",
+      "label": "Classifier model",
+      "sublabel": "/v1/systemone",
+      "pos": [
+        630,
+        460
+      ],
+      "size": [
+        124,
+        64
+      ]
+    },
+    {
+      "id": "decide",
+      "type": "backend",
+      "label": "decision.py",
+      "sublabel": "decide()",
+      "pos": [
+        800,
+        140
+      ],
+      "size": [
+        124,
+        64
+      ]
+    },
+    {
+      "id": "up",
+      "type": "security",
+      "label": "upstream.py",
+      "sublabel": "egress guard",
+      "pos": [
+        970,
+        140
+      ],
+      "size": [
+        124,
+        64
+      ]
+    },
+    {
+      "id": "public",
+      "type": "cloud",
+      "label": "Public provider",
+      "sublabel": "e.g. OpenRouter",
+      "pos": [
+        1208,
+        140
+      ],
+      "size": [
+        124,
+        64
+      ]
+    },
+    {
+      "id": "local",
+      "type": "backend",
+      "label": "Local model",
+      "sublabel": "llama.cpp, vLLM",
+      "pos": [
+        970,
+        460
+      ],
+      "size": [
+        124,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "LOCAL: your machine / network",
+      "wraps": [
+        "apps",
+        "api",
+        "session",
+        "redis",
+        "detect",
+        "clf",
+        "clfsrv",
+        "decide",
+        "up",
+        "local"
+      ],
+      "pad": 64
+    },
+    {
+      "kind": "security-group",
+      "label": "privacy-llm-gateway",
+      "wraps": [
+        "api",
+        "session",
+        "detect",
+        "clf",
+        "decide",
+        "up"
+      ],
+      "pad": 24
+    },
+    {
+      "kind": "region",
+      "label": "CLOUD",
+      "wraps": [
+        "public"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "id": "apps-api",
+      "from": "apps",
+      "to": "api",
+      "label": "Bearer key"
+    },
+    {
+      "id": "api-detect",
+      "from": "api",
+      "to": "detect"
+    },
+    {
+      "id": "api-session",
+      "from": "api",
+      "to": "session",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "session-redis",
+      "from": "session",
+      "to": "redis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "detect-clf",
+      "from": "detect",
+      "to": "clf",
+      "label": "no hit"
+    },
+    {
+      "id": "detect-decide",
+      "from": "detect",
+      "to": "decide",
+      "label": "hit: local",
+      "variant": "security"
+    },
+    {
+      "id": "clf-clfsrv",
+      "from": "clf",
+      "to": "clfsrv",
+      "label": "full request",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 40
+    },
+    {
+      "id": "clf-decide",
+      "from": "clf",
+      "to": "decide"
+    },
+    {
+      "id": "decide-up",
+      "from": "decide",
+      "to": "up"
+    },
+    {
+      "id": "up-local",
+      "from": "up",
+      "to": "local",
+      "label": "sensitive, uncertain, error",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 110
+    },
+    {
+      "id": "up-public",
+      "from": "up",
+      "to": "public",
+      "label": "public only",
+      "variant": "emphasis"
+    }
+  ]
+}

@@ -89,61 +89,14 @@ It does not use LiteLLM or any other gateway/proxy library.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph localnet["LOCAL network"]
-        direction LR
-        apps["Apps<br/>Open WebUI, n8n, scripts"]
-        prom["Prometheus"]
-
-        subgraph gw["privacy-llm-gateway"]
-            direction TB
-            api["app.py :8080<br/>auth.py · documents.py"]
-            session["session.py<br/>sticky sessions"]
-            subgraph pipe["pipeline.py: privacy check"]
-                direction TB
-                extract["extract.py<br/>normalised state"]
-                detect["detectors.py<br/>rules, checksums, detect-secrets"]
-                clf["classifier.py"]
-                decide["decision.py<br/>decide()"]
-                extract --> detect
-                detect -- "no hit" --> clf
-                detect -- "hit" --> decide
-                clf --> decide
-            end
-            up["upstream.py<br/>egress guard"]
-            metrics["metrics.py :9090<br/>/metrics"]
-
-            api --> session
-            api --> extract
-            decide --> up
-        end
-
-        redis[("Redis")]
-        clfsrv["Classifier model<br/>/v1/systemone"]
-        local["Local model<br/>llama.cpp, vLLM, Ollama"]
-    end
-
-    subgraph cloud["CLOUD (public LLM)"]
-        public["Public provider<br/>e.g. OpenRouter"]
-    end
-
-    apps -- "Bearer key" --> api
-    session <--> redis
-    clf -- "every auto request" --> clfsrv
-    up -- "sensitive, uncertain or any error" --> local
-    up == "only confidently public<br/>(HMAC stamp re-verified)" ==> public
-    prom --> metrics
-
-    style localnet fill:none,stroke:#2e7d32,stroke-width:3px
-    style cloud fill:none,stroke:#e65100,stroke-width:3px,stroke-dasharray:8 4
-    style gw fill:none,stroke:#43a047
-    style pipe fill:none,stroke:#7cb342,stroke-dasharray:3 3
-```
+<p align="center">
+  <img src="docs/architecture.svg" alt="privacy-llm-gateway architecture: apps, gateway, Redis, classifier model and local model inside the local network; only confidently public requests go to the public provider in the cloud" width="100%">
+</p>
 
 Everything in the green **LOCAL** box runs on your own machine or network: the apps, the
 gateway, Redis, the classifier model and the local model. Only requests that every check
-judged public cross into the orange **CLOUD** box (the thick arrow).
+judged public cross into the orange **CLOUD** box (the "public only" arrow). The diagram
+source is in [`docs/diagram/`](docs/diagram/).
 
 | Module | Responsibility |
 |---|---|
